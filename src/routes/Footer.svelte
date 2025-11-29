@@ -6,7 +6,7 @@
     <a id="linkedin" href="https://www.linkedin.com/in/kade-angell" target="_blank">
         <i class="fab fa-linkedin fa-2x"></i>
     </a>
-    <a href="https://github.com/ArKade523" id="github" target="_blank">
+    <a href="https://github.com/kadeangell" id="github" target="_blank">
         <i class="fab fa-github-square fa-2x"></i>
     </a>
     <a href="/contact-me" id="contact-me">

@@ -14,6 +14,7 @@
 	import usu from '$lib/images/usu.png';
 	import gas from '$lib/images/gas.png';
 	import beta from '$lib/images/beta.png';
+	import zaymo from '$lib/images/zaymo.png';
 
 </script>
 
@@ -42,17 +43,17 @@
 			<div class="content-grid">
 				<div class="body-text">
 					<p>
-						I'm a Computer Science student at Utah State University
-						set to graduate in 2025. I've build several <b>full-stack web apps</b> because I like front-facing development and interacting directly with users. 
-                        I also love <b>embedded software engineering</b>. Nothing compares to seeing a project that I've worked on leave my brain and enter the physical world.
-                        This passion has translated into working directly on the flight software for cubesats, a lunar rover, and an electric airplane.
+            I'm the founding engineer at <a href="https://zaymo.com" target="_blank">Zaymo</a>, building emails that behave like websites.
 						<br />
 						<br />
-                        I'm a Co-Founder of <a href="https://raydoc.dev">Raydoc</a>, where we're solving the problem of <b>technical documentation</b> for software engineering teams.
+						I graduated with a degree in Computer Science from Utah State University in 2025, with minors in Mathematics and Electrical Engineering.
+						<br />
+						<br />
+            I cofounded <a href="https://raydoc.dev">Raydoc</a>, where I tried to abstract the semantic meaning of a codebase away from its syntax.
 						<br />
 						<br />
 						When I'm not at school or work, I'm probably messing around with a retro game console,
-						reading, or rock climbing with my girlfriend.
+						reading, or rock climbing.
 					</p>
 				</div>
 
@@ -68,8 +69,31 @@
 			</div>
 			<div class="content-grid">
 				<Card class="card">
+					<img slot="image" class="card-image" style="padding: 1rem; box-sizing: border-box;" src={zaymo} alt="Zaymo Logo" />
+					<span slot="date" style="color:#444; font-size: 1rem;">August 2025 - Present</span>
+					<h2 slot="heading" style="color: #111">Founding Engineer</h2>
+					<div slot="text">
+						<span class="card-skill">Typescript</span>
+					</div>
+					<Stat slot="stat1">
+						<div slot="value" class="card-stat-value">Lehi, UT</div>
+						<div slot="type" class="card-stat-type">Location</div>
+					</Stat>
+					<Stat slot="stat2">
+					</Stat>
+					<Stat slot="stat3">
+						<div slot="value" class="card-stat-value">Zaymo</div>
+						<div slot="type" class="card-stat-type">Employer</div>
+					</Stat>
+
+					<p slot="back-text" class="card-back-text">
+						I build the product, infrastructure, and architecture for Zaymo's email platform.
+					</p>
+					
+				</Card>
+				<Card class="card">
 					<img slot="image" class="card-image" src={beta} alt="BETA Logo" />
-					<span slot="date" style="color:#444; font-size: 1rem;">Summer 2024 - Present</span>
+					<span slot="date" style="color:#444; font-size: 1rem;">Summer 2024 - August 2025</span>
 					<h2 slot="heading" style="color: #111">Software Engineering Internship</h2>
 					<div slot="text">
 						<span class="card-skill">C</span>
@@ -214,7 +238,6 @@
 
 	/* Mobile view */
 	@media only screen and (max-width: 768px) {
-
 		.body-text {
 			grid-column-start: 1;
 			padding: 0 0.5rem;

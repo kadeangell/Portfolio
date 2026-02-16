@@ -14,8 +14,20 @@ commands.set('help', (_args, writer) => {
   writer.write('  ls       List directory contents\r\n')
   writer.write('  cd       Change directory\r\n')
   writer.write('  cat      Print file contents\r\n')
+  writer.write('  history  Show command history\r\n')
   writer.write('  vim      Open file in Vim editor\r\n')
   writer.write('  rainbow  Test color output\r\n')
+})
+
+commands.set('history', (_args, writer, ctx) => {
+  const entries = ctx.getCommandHistory()
+  if (entries.length === 0) {
+    writer.write('\r\n(no history)')
+    return
+  }
+  for (let i = 0; i < entries.length; i++) {
+    writer.write(`\r\n  ${String(i + 1).padStart(4)}  ${entries[i]}`)
+  }
 })
 
 commands.set('clear', (_args, writer, ctx) => {

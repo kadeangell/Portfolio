@@ -7,6 +7,7 @@ export interface CommandContext {
   setCwd: (path: string) => void
   clearHistory: () => void
   runProcess: (name: string, args: string[]) => void
+  getCommandHistory: () => string[]
 }
 
 export type CommandHandler = (

@@ -3,7 +3,7 @@ import tsConfigPaths from 'vite-tsconfig-paths'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, mkdirSync, copyFileSync } from 'node:fs'
 import { join, extname } from 'node:path'
 import type { Plugin } from 'vite'
 
@@ -23,35 +23,55 @@ const mimeTypes: Record<string, string> = {
 }
 
 function serveVimWasm(): Plugin {
+  const vimWasmMiddleware = (req: any, res: any, next: any) => {
+    if (!req.url?.startsWith('/vim-wasm/')) return next()
+
+    const filePath = join(process.cwd(), 'node_modules/vim-wasm', req.url.replace('/vim-wasm/', ''))
+    if (existsSync(filePath) && statSync(filePath).isFile()) {
+      const ext = extname(filePath)
+      res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream')
+      res.end(readFileSync(filePath))
+      return
+    }
+
+    next()
+  }
+
   return {
     name: 'serve-vim-wasm',
-    configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        if (!req.url?.startsWith('/vim-wasm/')) return next()
-
-        const filePath = join(process.cwd(), 'node_modules/vim-wasm', req.url.replace('/vim-wasm/', ''))
-        if (existsSync(filePath) && statSync(filePath).isFile()) {
-          const ext = extname(filePath)
-          res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream')
-          res.end(readFileSync(filePath))
-          return
+    config(_, env) {
+      if (env.command === 'build') {
+        // Copy vim-wasm runtime files to public/ so they're included in the build output
+        const dest = join(process.cwd(), 'public', 'vim-wasm')
+        mkdirSync(dest, { recursive: true })
+        for (const f of ['vim.js', 'vim.wasm', 'vim.data']) {
+          copyFileSync(join(process.cwd(), 'node_modules', 'vim-wasm', f), join(dest, f))
         }
-
-        next()
-      })
+      }
+    },
+    configureServer(server) {
+      server.middlewares.use(vimWasmMiddleware)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(vimWasmMiddleware)
     },
   }
 }
 
 function crossOriginIsolation(): Plugin {
+  const middleware = (_req: any, res: any, next: any) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+    next()
+  }
+
   return {
     name: 'cross-origin-isolation',
     configureServer(server) {
-      server.middlewares.use((_req, res, next) => {
-        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
-        res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
-        next()
-      })
+      server.middlewares.use(middleware)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(middleware)
     },
   }
 }

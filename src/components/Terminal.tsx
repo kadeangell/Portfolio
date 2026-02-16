@@ -80,7 +80,7 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
   const [history, setHistory] = useState<CellData[][]>([])
   const [inputLine, setInputLine] = useState('')
   const [inputCursor, setInputCursor] = useState(0)
-  const [displayCwd, setDisplayCwd] = useState(cwd)
+  const [promptText, setPromptText] = useState('')
   const [focused, setFocused] = useState(true)
   const [mode, setMode] = useState<TerminalMode>({ kind: 'shell' })
   const wasmTermRef = useRef<any>(null)
@@ -90,7 +90,7 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
 
   const cwdRef = useRef(cwd)
   const setCwdRef = useRef(setCwd)
-  useEffect(() => { cwdRef.current = cwd; setDisplayCwd(cwd) }, [cwd])
+  useEffect(() => { cwdRef.current = cwd }, [cwd])
   useEffect(() => { setCwdRef.current = setCwd }, [setCwd])
   useEffect(() => { modeRef.current = mode }, [mode])
 
@@ -222,20 +222,21 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
 
       shell.setBeforePromptCallback(flushToHistory)
 
-      shell.setInputChangeCallback((buffer, pos) => {
+      shell.setInputChangeCallback((buffer, pos, prompt) => {
         setInputLine(buffer)
         setInputCursor(pos)
+        setPromptText(prompt)
       })
 
       shell.setContextProvider(() => ({
         cwd: cwdRef.current,
         setCwd: (path: string) => {
           cwdRef.current = path
-          setDisplayCwd(path)
           setCwdRef.current(path)
         },
         clearHistory: () => setHistory([]),
         runProcess,
+        getCommandHistory: () => shell.getHistory(),
       }))
 
       cleanupWindowAPI = installWindowAPI(writer, shell)
@@ -275,7 +276,7 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
     const isMac = /mac|iphone|ipad|ipod/i.test(navigator.userAgent)
     const modKey = isMac ? e.metaKey : e.ctrlKey
     if (modKey) {
-      const browserKeys = new Set(['l', 't', 'w', 'n', 'r', 'q', 'Tab', 'shift'])
+      const browserKeys = new Set(['l', 't', 'w', 'n', 'q', 'Tab', 'shift'])
       // Cmd/Ctrl+Shift combos (e.g. Cmd+Shift+T to reopen tab)
       if (e.shiftKey) return
       if (browserKeys.has(e.key)) return
@@ -339,6 +340,15 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
     } else if (e.ctrlKey && e.key === 'k') {
       e.preventDefault()
       shell.handleData('\x0b')
+    } else if (e.ctrlKey && e.key === 'r') {
+      e.preventDefault()
+      shell.handleData('\x12')
+    } else if (e.ctrlKey && e.key === 'g') {
+      e.preventDefault()
+      shell.handleData('\x07')
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      shell.handleData('\x1b')
     } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
       e.preventDefault()
       shell.handleData(e.key)
@@ -350,8 +360,6 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
       hiddenInputRef.current?.focus()
     }
   }
-
-  const promptText = displayCwd === '/' ? '~ $ ' : '~' + displayCwd + ' $ '
 
   return (
     <div

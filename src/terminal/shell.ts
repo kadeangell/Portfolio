@@ -2,6 +2,27 @@ import type { TerminalWriter, CommandContext } from './types'
 import { getCommand, getCommandNames } from './commands'
 import { resolvePath, getNode, listDir } from './fs'
 
+const HISTORY_KEY = 'shell-history'
+const MAX_HISTORY = 500
+
+function loadHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return []
+}
+
+function saveHistory(history: string[]): void {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-MAX_HISTORY)))
+  } catch { /* ignore */ }
+}
+
+type ShellMode =
+  | { kind: 'normal' }
+  | { kind: 'search'; query: string; matchIndex: number }
+
 export class ShellAdapter {
   private inputBuffer = ''
   private cursorPos = 0
@@ -10,9 +31,17 @@ export class ShellAdapter {
   private keybinds = new Map<string, () => void>()
   private escapeBuffer = ''
   private inEscapeSequence = false
-  private getContext: () => CommandContext = () => ({ cwd: '/', setCwd: () => {}, clearHistory: () => {}, runProcess: () => {} })
+  private getContext: () => CommandContext = () => ({ cwd: '/', setCwd: () => {}, clearHistory: () => {}, runProcess: () => {}, getCommandHistory: () => [] })
   private onBeforePrompt: () => void = () => {}
-  private onInputChange: (buffer: string, cursorPos: number) => void = () => {}
+  private onInputChange: (buffer: string, cursorPos: number, prompt: string) => void = () => {}
+
+  // Command history
+  private history: string[] = loadHistory()
+  private historyIndex = -1
+  private savedInput = ''
+
+  // Shell mode (normal vs reverse-i-search)
+  private mode: ShellMode = { kind: 'normal' }
 
   constructor(writer: TerminalWriter) {
     this.writer = writer
@@ -26,18 +55,29 @@ export class ShellAdapter {
     this.onBeforePrompt = cb
   }
 
-  setInputChangeCallback(cb: (buffer: string, cursorPos: number) => void): void {
+  setInputChangeCallback(cb: (buffer: string, cursorPos: number, prompt: string) => void): void {
     this.onInputChange = cb
   }
 
   private notifyInputChange(): void {
-    this.onInputChange(this.inputBuffer, this.cursorPos)
+    const prompt = this.mode.kind === 'search'
+      ? `(reverse-i-search)'${this.mode.query}': `
+      : this.buildPrompt()
+    this.onInputChange(this.inputBuffer, this.cursorPos, prompt)
+  }
+
+  private buildPrompt(): string {
+    const ctx = this.getContext()
+    const display = ctx.cwd === '/' ? '~' : '~' + ctx.cwd
+    return `${display} $ `
   }
 
   printPrompt(): void {
-    const ctx = this.getContext()
-    const display = ctx.cwd === '/' ? '~' : '~' + ctx.cwd
-    this.writer.write(`${display} $ `)
+    this.writer.write(this.buildPrompt())
+  }
+
+  getHistory(): string[] {
+    return this.history
   }
 
   onInput(cb: (data: string) => void): () => void {
@@ -50,6 +90,85 @@ export class ShellAdapter {
     return () => this.keybinds.delete(key)
   }
 
+  // ── History helpers ───────────────────────────────────────────
+
+  private pushHistory(line: string): void {
+    // Don't duplicate the last entry
+    if (this.history.length > 0 && this.history[this.history.length - 1] === line) return
+    this.history.push(line)
+    saveHistory(this.history)
+  }
+
+  private resetHistoryBrowsing(): void {
+    this.historyIndex = -1
+    this.savedInput = ''
+  }
+
+  /** Replace the visible input line with new text, cursor at end. */
+  private replaceInputLine(text: string): void {
+    // Erase current line: move to start, clear to end
+    if (this.cursorPos > 0) {
+      this.writer.write(`\x1b[${this.cursorPos}D`)
+    }
+    this.writer.write('\x1b[K')
+    // Write new text
+    this.writer.write(text)
+    this.inputBuffer = text
+    this.cursorPos = text.length
+  }
+
+  // ── Reverse-i-search ─────────────────────────────────────────
+
+  private searchMatch(): string | null {
+    if (this.mode.kind !== 'search') return null
+    const { query, matchIndex } = this.mode
+    if (!query) return null
+    let found = 0
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      if (this.history[i].includes(query)) {
+        if (found === matchIndex) return this.history[i]
+        found++
+      }
+    }
+    return null
+  }
+
+  private redrawSearchPrompt(): void {
+    if (this.mode.kind !== 'search') return
+    const match = this.searchMatch() ?? ''
+    // Move to column 0, clear line, draw search prompt
+    this.writer.write('\r\x1b[K')
+    this.writer.write(`(reverse-i-search)'${this.mode.query}': ${match}`)
+    // Update React state with the matched command
+    this.inputBuffer = match
+    this.cursorPos = match.length
+  }
+
+  private enterSearchMode(): void {
+    this.savedInput = this.inputBuffer
+    this.mode = { kind: 'search', query: '', matchIndex: 0 }
+    this.redrawSearchPrompt()
+    this.notifyInputChange()
+  }
+
+  private exitSearchMode(accept: boolean): void {
+    const match = accept ? this.searchMatch() : null
+    this.mode = { kind: 'normal' }
+
+    // Build the full output as one write to avoid ghostty buffer issues
+    const prompt = this.buildPrompt()
+    const restored = accept && match !== null ? match : this.savedInput
+
+    this.inputBuffer = restored
+    this.cursorPos = restored.length
+    this.savedInput = ''
+
+    this.writer.write('\r\x1b[K' + prompt + restored)
+    this.notifyInputChange()
+  }
+
+  // ── Main input handler ────────────────────────────────────────
+
   handleData(data: string): void {
     // Notify raw input listeners first
     for (const listener of this.inputListeners) {
@@ -60,14 +179,18 @@ export class ShellAdapter {
       const ch = data[i]
       const code = ch.charCodeAt(0)
 
-      // Handle escape sequences (arrow keys, etc.)
+      // ── Escape sequences ──────────────────────────────────
       if (this.inEscapeSequence) {
         this.escapeBuffer += ch
-        if (this.escapeBuffer === '[') {
-          // Waiting for the final character
-          continue
-        }
+        if (this.escapeBuffer === '[') continue
         if (this.escapeBuffer.startsWith('[')) {
+          // In search mode, escape cancels
+          if (this.mode.kind === 'search') {
+            this.exitSearchMode(false)
+            this.inEscapeSequence = false
+            this.escapeBuffer = ''
+            continue
+          }
           this.handleEscapeSequence(this.escapeBuffer)
           this.notifyInputChange()
         }
@@ -77,15 +200,88 @@ export class ShellAdapter {
       }
 
       if (code === 0x1b) {
-        // ESC — start of escape sequence
+        // Bare Escape in search mode cancels immediately
+        if (this.mode.kind === 'search') {
+          this.exitSearchMode(false)
+          continue
+        }
         this.inEscapeSequence = true
         this.escapeBuffer = ''
+        continue
+      }
+
+      // ── Search mode input ─────────────────────────────────
+      if (this.mode.kind === 'search') {
+        if (code === 0x12) {
+          // Ctrl+R again — next match
+          this.mode = { ...this.mode, matchIndex: this.mode.matchIndex + 1 }
+          this.redrawSearchPrompt()
+          this.notifyInputChange()
+          continue
+        }
+        if (code === 0x07) {
+          // Ctrl+G — cancel search
+          this.exitSearchMode(false)
+          continue
+        }
+        if (code === 0x03) {
+          // Ctrl+C — cancel search
+          this.exitSearchMode(false)
+          continue
+        }
+        if (code === 0x0d) {
+          // Enter — accept match and run it
+          const match = this.searchMatch()
+          this.exitSearchMode(true)
+          if (match) {
+            // Execute the matched command
+            this.writer.write('\r\n')
+            this.pushHistory(match)
+            this.inputBuffer = ''
+            this.cursorPos = 0
+            let suppress = false
+            suppress = this.executeCommand(match) === 'suppress-prompt'
+            this.onBeforePrompt()
+            if (!suppress) {
+              this.printPrompt()
+            }
+            this.notifyInputChange()
+          }
+          continue
+        }
+        if (code === 0x7f || code === 0x08) {
+          // Backspace — remove last char from query
+          if (this.mode.query.length > 0) {
+            this.mode = { ...this.mode, query: this.mode.query.slice(0, -1), matchIndex: 0 }
+            this.redrawSearchPrompt()
+            this.notifyInputChange()
+          }
+          continue
+        }
+        if (code >= 0x20) {
+          // Printable character — append to query
+          this.mode = { ...this.mode, query: this.mode.query + ch, matchIndex: 0 }
+          this.redrawSearchPrompt()
+          this.notifyInputChange()
+          continue
+        }
+        // Any other control char — accept match and fall through to normal handling
+        this.exitSearchMode(true)
+        // Don't continue — let this char be processed normally below
+      }
+
+      // ── Normal mode input ─────────────────────────────────
+
+      if (code === 0x12) {
+        // Ctrl+R — enter reverse-i-search
+        this.enterSearchMode()
         continue
       }
 
       if (code === 0x03) {
         // Ctrl+C — cancel current input
         if (this.checkKeybind('ctrl+c')) continue
+        this.resetHistoryBrowsing()
         this.writer.write('^C\r\n')
         this.inputBuffer = ''
         this.cursorPos = 0
@@ -108,7 +304,6 @@ export class ShellAdapter {
         this.writer.write('\x1b[2J\x1b[H')
         this.printPrompt()
         this.writer.write(this.inputBuffer)
-        // Move cursor back to correct position
         const charsAfter = this.inputBuffer.length - this.cursorPos
         if (charsAfter > 0) {
           this.writer.write(`\x1b[${charsAfter}D`)
@@ -145,19 +340,14 @@ export class ShellAdapter {
         if (this.checkKeybind('ctrl+w')) continue
         if (this.cursorPos > 0) {
           let pos = this.cursorPos
-          // Skip whitespace before cursor
           while (pos > 0 && this.inputBuffer[pos - 1] === ' ') pos--
-          // Skip non-whitespace (the word)
           while (pos > 0 && this.inputBuffer[pos - 1] !== ' ') pos--
           const deleted = this.cursorPos - pos
           const before = this.inputBuffer.slice(0, pos)
           const after = this.inputBuffer.slice(this.cursorPos)
           this.inputBuffer = before + after
-          // Move cursor back by deleted chars
           this.writer.write(`\x1b[${deleted}D`)
-          // Rewrite rest of line + clear trailing chars
           this.writer.write(after + ' '.repeat(deleted))
-          // Move cursor back to correct position
           this.writer.write(`\x1b[${after.length + deleted}D`)
           this.cursorPos = pos
         }
@@ -180,7 +370,6 @@ export class ShellAdapter {
         // Ctrl+U — clear line before cursor
         if (this.checkKeybind('ctrl+u')) continue
         if (this.cursorPos > 0) {
-          // Move cursor to start, clear line, rewrite text after old cursor
           this.writer.write(`\x1b[${this.cursorPos}D`)
           this.writer.write('\x1b[K')
           const remaining = this.inputBuffer.slice(this.cursorPos)
@@ -202,7 +391,6 @@ export class ShellAdapter {
           const after = this.inputBuffer.slice(this.cursorPos)
           this.inputBuffer = before + after
           this.cursorPos--
-          // Move back, rewrite rest of line, clear trailing char, reposition cursor
           this.writer.write('\b')
           this.writer.write(after + ' ')
           this.writer.write(`\x1b[${after.length + 1}D`)
@@ -217,8 +405,10 @@ export class ShellAdapter {
         const line = this.inputBuffer.trim()
         this.inputBuffer = ''
         this.cursorPos = 0
+        this.resetHistoryBrowsing()
         let suppress = false
         if (line) {
+          this.pushHistory(line)
           suppress = this.executeCommand(line) === 'suppress-prompt'
         }
         this.onBeforePrompt()
@@ -238,11 +428,12 @@ export class ShellAdapter {
 
       // Regular printable character
       if (code >= 0x20) {
+        // Any typing resets history browsing
+        this.resetHistoryBrowsing()
         const before = this.inputBuffer.slice(0, this.cursorPos)
         const after = this.inputBuffer.slice(this.cursorPos)
         this.inputBuffer = before + ch + after
         this.cursorPos++
-        // Write the character + rest of line, then reposition cursor
         this.writer.write(ch + after)
         if (after.length > 0) {
           this.writer.write(`\x1b[${after.length}D`)
@@ -258,16 +449,13 @@ export class ShellAdapter {
     const isFirstWord = parts.length <= 1
 
     if (isFirstWord) {
-      // Complete command names
       const prefix = parts[0] || ''
       const matches = getCommandNames().filter((n) => n.startsWith(prefix))
       this.applyCompletion(prefix, matches, true)
     } else {
-      // Complete filesystem paths
       const partial = parts[parts.length - 1] || ''
       const ctx = this.getContext()
 
-      // Split partial into directory part and name prefix
       const lastSlash = partial.lastIndexOf('/')
       let dirPath: string
       let namePrefix: string
@@ -283,7 +471,6 @@ export class ShellAdapter {
       if (!entries) return
 
       const matches = entries.filter((e) => e.startsWith(namePrefix))
-      // Build full completions preserving the directory prefix the user typed
       const typedDir = lastSlash === -1 ? '' : partial.slice(0, lastSlash + 1)
       const fullMatches = matches.map((m) => {
         const node = getNode(resolvePath(ctx.cwd, typedDir + m))
@@ -300,7 +487,6 @@ export class ShellAdapter {
     if (matches.length === 1) {
       completion = matches[0] + (addSpace ? ' ' : '')
     } else {
-      // Complete to longest common prefix
       completion = matches[0]
       for (let i = 1; i < matches.length; i++) {
         let j = 0
@@ -308,7 +494,6 @@ export class ShellAdapter {
         completion = completion.slice(0, j)
       }
       if (completion === partial) {
-        // No further completion possible — show options
         this.writer.write('\r\n' + matches.join('  ') + '\r\n')
         this.onBeforePrompt()
         this.printPrompt()
@@ -322,7 +507,6 @@ export class ShellAdapter {
       }
     }
 
-    // Insert the completed portion
     const insert = completion.slice(partial.length)
     if (!insert) return
 
@@ -339,10 +523,35 @@ export class ShellAdapter {
 
   private handleEscapeSequence(seq: string): void {
     switch (seq) {
-      case '[A': // Up arrow — command history (future)
+      case '[A': {
+        // Up arrow — browse history backward
+        if (this.history.length === 0) break
+        if (this.historyIndex === -1) {
+          // Entering history mode — save current input
+          this.savedInput = this.inputBuffer
+          this.historyIndex = this.history.length - 1
+        } else if (this.historyIndex > 0) {
+          this.historyIndex--
+        } else {
+          break // already at oldest
+        }
+        this.replaceInputLine(this.history[this.historyIndex])
         break
-      case '[B': // Down arrow — command history (future)
+      }
+      case '[B': {
+        // Down arrow — browse history forward
+        if (this.historyIndex === -1) break
+        if (this.historyIndex < this.history.length - 1) {
+          this.historyIndex++
+          this.replaceInputLine(this.history[this.historyIndex])
+        } else {
+          // Past newest — restore saved input
+          this.historyIndex = -1
+          this.replaceInputLine(this.savedInput)
+          this.savedInput = ''
+        }
         break
+      }
       case '[C': // Right arrow
         if (this.cursorPos < this.inputBuffer.length) {
           this.cursorPos++

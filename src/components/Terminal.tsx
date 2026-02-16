@@ -141,7 +141,10 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
 
       shell.setContextProvider(() => ({
         cwd: cwdRef.current,
-        setCwd: (path: string) => setCwdRef.current(path),
+        setCwd: (path: string) => {
+          cwdRef.current = path
+          setCwdRef.current(path)
+        },
       }))
 
       cleanupWindowAPI = installWindowAPI(writer, shell)

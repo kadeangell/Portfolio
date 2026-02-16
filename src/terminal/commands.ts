@@ -164,3 +164,7 @@ export function getCommand(name: string): CommandHandler | undefined {
 export function registerCommand(name: string, handler: CommandHandler): void {
   commands.set(name, handler)
 }
+
+export function getCommandNames(): string[] {
+  return [...commands.keys()]
+}

@@ -1,5 +1,6 @@
 import type { TerminalWriter, CommandContext } from './types'
-import { getCommand } from './commands'
+import { getCommand, getCommandNames } from './commands'
+import { resolvePath, getNode, listDir } from './fs'
 
 export class ShellAdapter {
   private inputBuffer = ''
@@ -199,8 +200,9 @@ export class ShellAdapter {
       }
 
       if (code === 0x09) {
-        // Tab — no-op for now
+        // Tab — autocomplete
         if (this.checkKeybind('tab')) continue
+        this.handleTab()
         continue
       }
 
@@ -216,6 +218,88 @@ export class ShellAdapter {
           this.writer.write(`\x1b[${after.length}D`)
         }
       }
+    }
+  }
+
+  private handleTab(): void {
+    const textBeforeCursor = this.inputBuffer.slice(0, this.cursorPos)
+    const parts = textBeforeCursor.split(/\s+/)
+    const isFirstWord = parts.length <= 1
+
+    if (isFirstWord) {
+      // Complete command names
+      const prefix = parts[0] || ''
+      const matches = getCommandNames().filter((n) => n.startsWith(prefix))
+      this.applyCompletion(prefix, matches, true)
+    } else {
+      // Complete filesystem paths
+      const partial = parts[parts.length - 1] || ''
+      const ctx = this.getContext()
+
+      // Split partial into directory part and name prefix
+      const lastSlash = partial.lastIndexOf('/')
+      let dirPath: string
+      let namePrefix: string
+      if (lastSlash === -1) {
+        dirPath = ctx.cwd
+        namePrefix = partial
+      } else {
+        dirPath = resolvePath(ctx.cwd, partial.slice(0, lastSlash + 1))
+        namePrefix = partial.slice(lastSlash + 1)
+      }
+
+      const entries = listDir(dirPath)
+      if (!entries) return
+
+      const matches = entries.filter((e) => e.startsWith(namePrefix))
+      // Build full completions preserving the directory prefix the user typed
+      const typedDir = lastSlash === -1 ? '' : partial.slice(0, lastSlash + 1)
+      const fullMatches = matches.map((m) => {
+        const node = getNode(resolvePath(ctx.cwd, typedDir + m))
+        return typedDir + m + (node?.kind === 'dir' ? '/' : '')
+      })
+      this.applyCompletion(partial, fullMatches, false)
+    }
+  }
+
+  private applyCompletion(partial: string, matches: string[], addSpace: boolean): void {
+    if (matches.length === 0) return
+
+    let completion: string
+    if (matches.length === 1) {
+      completion = matches[0] + (addSpace ? ' ' : '')
+    } else {
+      // Complete to longest common prefix
+      completion = matches[0]
+      for (let i = 1; i < matches.length; i++) {
+        let j = 0
+        while (j < completion.length && j < matches[i].length && completion[j] === matches[i][j]) j++
+        completion = completion.slice(0, j)
+      }
+      if (completion === partial) {
+        // No further completion possible — show options
+        const after = this.inputBuffer.slice(this.cursorPos)
+        this.writer.write('\r\n' + matches.join('  ') + '\r\n')
+        this.printPrompt()
+        this.writer.write(this.inputBuffer)
+        if (after.length > 0) {
+          this.writer.write(`\x1b[${after.length}D`)
+        }
+        return
+      }
+    }
+
+    // Insert the completed portion
+    const insert = completion.slice(partial.length)
+    if (!insert) return
+
+    const before = this.inputBuffer.slice(0, this.cursorPos)
+    const after = this.inputBuffer.slice(this.cursorPos)
+    this.inputBuffer = before + insert + after
+    this.cursorPos += insert.length
+    this.writer.write(insert + after)
+    if (after.length > 0) {
+      this.writer.write(`\x1b[${after.length}D`)
     }
   }
 

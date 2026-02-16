@@ -1,4 +1,5 @@
 import type { CommandHandler, TerminalWriter } from './types'
+import { resolvePath, getNode, listDir, readFile, isDirectory } from './fs'
 
 const commands = new Map<string, CommandHandler>()
 
@@ -9,6 +10,10 @@ commands.set('help', (_args, writer) => {
   writer.write('  echo     Print arguments\r\n')
   writer.write('  whoami   Display current user\r\n')
   writer.write('  date     Display current date\r\n')
+  writer.write('  pwd      Print working directory\r\n')
+  writer.write('  ls       List directory contents\r\n')
+  writer.write('  cd       Change directory\r\n')
+  writer.write('  cat      Print file contents\r\n')
   writer.write('  rainbow  Test color output\r\n')
 })
 
@@ -26,6 +31,74 @@ commands.set('whoami', (_args, writer) => {
 
 commands.set('date', (_args, writer) => {
   writer.write('\r\n' + new Date().toString())
+})
+
+commands.set('pwd', (_args, writer, ctx) => {
+  writer.write('\r\n' + ctx.cwd)
+})
+
+commands.set('ls', (args, writer, ctx) => {
+  const target = args[0] ? resolvePath(ctx.cwd, args[0]) : ctx.cwd
+  const entries = listDir(target)
+  if (!entries) {
+    writer.write(`\r\nls: ${args[0] || target}: No such directory`)
+    return
+  }
+
+  const node = getNode(target)
+  if (!node || node.kind !== 'dir') return
+
+  const parts: string[] = []
+  for (const name of entries) {
+    const child = node.children[name]
+    if (child.kind === 'dir') {
+      // Bold blue for directories, with trailing /
+      parts.push(`\x1b[1;34m${name}/\x1b[0m`)
+    } else {
+      parts.push(name)
+    }
+  }
+  writer.write('\r\n' + parts.join('  '))
+})
+
+commands.set('cd', (args, _writer, ctx) => {
+  const target = args[0]
+  if (!target || target === '~') {
+    ctx.setCwd('/')
+    return
+  }
+
+  const resolved = resolvePath(ctx.cwd, target)
+  if (!isDirectory(resolved)) {
+    _writer.write(`\r\ncd: ${target}: No such directory`)
+    return
+  }
+  ctx.setCwd(resolved)
+})
+
+commands.set('cat', (args, writer, ctx) => {
+  if (!args[0]) {
+    writer.write('\r\ncat: missing file operand')
+    return
+  }
+
+  const resolved = resolvePath(ctx.cwd, args[0])
+  const node = getNode(resolved)
+
+  if (!node) {
+    writer.write(`\r\ncat: ${args[0]}: No such file or directory`)
+    return
+  }
+  if (node.kind === 'dir') {
+    writer.write(`\r\ncat: ${args[0]}: Is a directory`)
+    return
+  }
+
+  const content = readFile(resolved)
+  if (content !== null) {
+    // Replace \n with \r\n for terminal display
+    writer.write('\r\n' + content.replace(/\n/g, '\r\n'))
+  }
 })
 
 commands.set('rainbow', (_args, writer) => {

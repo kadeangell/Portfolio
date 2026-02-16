@@ -25,6 +25,11 @@ interface ScreenState {
   totalRows: number
 }
 
+interface TerminalProps {
+  cwd: string
+  setCwd: (value: string | ((old: string) => string | null) | null) => void
+}
+
 const DEFAULT_FG = 'rgb(204,204,204)'
 const DEFAULT_BG = 'rgb(0,0,0)'
 
@@ -36,7 +41,7 @@ function cellBg(cell: any): string {
   return `rgb(${cell.bg_r},${cell.bg_g},${cell.bg_b})`
 }
 
-export function Terminal() {
+export function Terminal({ cwd, setCwd }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const hiddenInputRef = useRef<HTMLTextAreaElement>(null)
   const [screen, setScreen] = useState<ScreenState | null>(null)
@@ -44,6 +49,11 @@ export function Terminal() {
   const wasmTermRef = useRef<any>(null)
   const shellRef = useRef<ShellAdapter | null>(null)
   const termRef = useRef<any>(null)
+
+  const cwdRef = useRef(cwd)
+  const setCwdRef = useRef(setCwd)
+  useEffect(() => { cwdRef.current = cwd }, [cwd])
+  useEffect(() => { setCwdRef.current = setCwd }, [setCwd])
 
   // Read cells from ghostty's buffer and update React state
   const syncScreen = useCallback(() => {
@@ -128,6 +138,12 @@ export function Terminal() {
 
       const shell = new ShellAdapter(writer)
       shellRef.current = shell
+
+      shell.setContextProvider(() => ({
+        cwd: cwdRef.current,
+        setCwd: (path: string) => setCwdRef.current(path),
+      }))
+
       cleanupWindowAPI = installWindowAPI(writer, shell)
 
       // Print MOTD and initial prompt

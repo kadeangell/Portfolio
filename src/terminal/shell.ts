@@ -1,7 +1,5 @@
-import type { TerminalWriter } from './types'
+import type { TerminalWriter, CommandContext } from './types'
 import { getCommand } from './commands'
-
-const PROMPT = '$ '
 
 export class ShellAdapter {
   private inputBuffer = ''
@@ -11,13 +9,20 @@ export class ShellAdapter {
   private keybinds = new Map<string, () => void>()
   private escapeBuffer = ''
   private inEscapeSequence = false
+  private getContext: () => CommandContext = () => ({ cwd: '/', setCwd: () => {} })
 
   constructor(writer: TerminalWriter) {
     this.writer = writer
   }
 
+  setContextProvider(provider: () => CommandContext): void {
+    this.getContext = provider
+  }
+
   printPrompt(): void {
-    this.writer.write(PROMPT)
+    const ctx = this.getContext()
+    const display = ctx.cwd === '/' ? '~' : '~' + ctx.cwd
+    this.writer.write(`${display} $ `)
   }
 
   onInput(cb: (data: string) => void): () => void {
@@ -273,7 +278,7 @@ export class ShellAdapter {
 
     const cmd = getCommand(name)
     if (cmd) {
-      cmd(args, this.writer)
+      cmd(args, this.writer, this.getContext())
       this.writer.write('\r\n')
     } else {
       this.writer.write(`${name}: command not found\r\n`)

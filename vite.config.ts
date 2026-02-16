@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import tsConfigPaths from 'vite-tsconfig-paths'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, extname } from 'node:path'
 import type { Plugin } from 'vite'
@@ -58,6 +59,7 @@ function serveLegacy(): Plugin {
 export default defineConfig({
   plugins: [
     serveLegacy(),
+    tailwindcss(),
     tsConfigPaths(),
     tanstackStart({
       prerender: {
@@ -65,6 +67,10 @@ export default defineConfig({
         crawlLinks: true,
       },
     }),
-    viteReact(),
+    viteReact({
+      babel: {
+        plugins: ['babel-plugin-react-compiler'],
+      },
+    }),
   ],
 })

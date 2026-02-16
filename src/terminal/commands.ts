@@ -17,7 +17,8 @@ commands.set('help', (_args, writer) => {
   writer.write('  rainbow  Test color output\r\n')
 })
 
-commands.set('clear', (_args, writer) => {
+commands.set('clear', (_args, writer, ctx) => {
+  ctx.clearHistory()
   writer.write('\x1b[2J\x1b[H')
 })
 

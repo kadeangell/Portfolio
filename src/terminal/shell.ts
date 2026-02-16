@@ -10,7 +10,8 @@ export class ShellAdapter {
   private keybinds = new Map<string, () => void>()
   private escapeBuffer = ''
   private inEscapeSequence = false
-  private getContext: () => CommandContext = () => ({ cwd: '/', setCwd: () => {} })
+  private getContext: () => CommandContext = () => ({ cwd: '/', setCwd: () => {}, clearHistory: () => {} })
+  private onBeforePrompt: () => void = () => {}
 
   constructor(writer: TerminalWriter) {
     this.writer = writer
@@ -18,6 +19,10 @@ export class ShellAdapter {
 
   setContextProvider(provider: () => CommandContext): void {
     this.getContext = provider
+  }
+
+  setBeforePromptCallback(cb: () => void): void {
+    this.onBeforePrompt = cb
   }
 
   printPrompt(): void {
@@ -74,6 +79,7 @@ export class ShellAdapter {
         this.writer.write('^C\r\n')
         this.inputBuffer = ''
         this.cursorPos = 0
+        this.onBeforePrompt()
         this.printPrompt()
         continue
       }
@@ -87,6 +93,7 @@ export class ShellAdapter {
       if (code === 0x0c) {
         // Ctrl+L — clear screen
         if (this.checkKeybind('ctrl+l')) continue
+        this.getContext().clearHistory()
         this.writer.write('\x1b[2J\x1b[H')
         this.printPrompt()
         this.writer.write(this.inputBuffer)
@@ -195,6 +202,7 @@ export class ShellAdapter {
         if (line) {
           this.executeCommand(line)
         }
+        this.onBeforePrompt()
         this.printPrompt()
         continue
       }

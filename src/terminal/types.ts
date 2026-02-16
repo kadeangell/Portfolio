@@ -5,6 +5,7 @@ export interface TerminalWriter {
 export interface CommandContext {
   cwd: string
   setCwd: (path: string) => void
+  clearHistory: () => void
 }
 
 export type CommandHandler = (

@@ -32,6 +32,7 @@ interface TerminalProps {
 
 const DEFAULT_FG = 'rgb(204,204,204)'
 const DEFAULT_BG = 'rgb(0,0,0)'
+const EMPTY_CELL: CellData = { char: ' ', fg: DEFAULT_FG, bg: DEFAULT_BG, bold: false, italic: false, underline: false }
 
 function cellFg(cell: any): string {
   return `rgb(${cell.fg_r},${cell.fg_g},${cell.fg_b})`
@@ -41,10 +42,42 @@ function cellBg(cell: any): string {
   return `rgb(${cell.bg_r},${cell.bg_g},${cell.bg_b})`
 }
 
+function readGhosttyRow(wasmTerm: any, y: number, cols: number): CellData[] {
+  const cells = wasmTerm.getLine(y)
+  const row: CellData[] = []
+  if (cells) {
+    for (let x = 0; x < cols; x++) {
+      const cell = cells[x]
+      if (cell) {
+        row.push({
+          char: cell.codepoint ? String.fromCodePoint(cell.codepoint) : ' ',
+          fg: cellFg(cell),
+          bg: cellBg(cell),
+          bold: !!(cell.flags & 1),
+          italic: !!(cell.flags & 4),
+          underline: !!(cell.flags & 8),
+        })
+      } else {
+        row.push(EMPTY_CELL)
+      }
+    }
+  } else {
+    for (let x = 0; x < cols; x++) {
+      row.push(EMPTY_CELL)
+    }
+  }
+  return row
+}
+
+function rowHasContent(row: CellData[]): boolean {
+  return row.some((c) => c.char !== ' ')
+}
+
 export function Terminal({ cwd, setCwd }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const hiddenInputRef = useRef<HTMLTextAreaElement>(null)
   const [screen, setScreen] = useState<ScreenState | null>(null)
+  const [history, setHistory] = useState<CellData[][]>([])
   const [focused, setFocused] = useState(true)
   const wasmTermRef = useRef<any>(null)
   const shellRef = useRef<ShellAdapter | null>(null)
@@ -55,6 +88,13 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
   useEffect(() => { cwdRef.current = cwd }, [cwd])
   useEffect(() => { setCwdRef.current = setCwd }, [setCwd])
 
+  // Auto-scroll to bottom when screen updates
+  useEffect(() => {
+    if (screen && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight
+    }
+  }, [screen])
+
   // Read cells from ghostty's buffer and update React state
   const syncScreen = useCallback(() => {
     const wasmTerm = wasmTermRef.current
@@ -64,42 +104,39 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
     const cols = term.cols || 80
     const totalRows = term.rows || 24
     const cursor = wasmTerm.getCursor()
-    const rows: CellData[][] = []
+    const cursorY = cursor?.y ?? 0
 
-    for (let y = 0; y < totalRows; y++) {
+    // Only capture rows up to the last one with content (or the cursor row)
+    let lastContentRow = cursorY
+    for (let y = totalRows - 1; y > cursorY; y--) {
       const cells = wasmTerm.getLine(y)
-      const row: CellData[] = []
       if (cells) {
+        let hasContent = false
         for (let x = 0; x < cols; x++) {
           const cell = cells[x]
-          if (cell) {
-            const fg = cellFg(cell)
-            const bg = cellBg(cell)
-            row.push({
-              char: cell.codepoint ? String.fromCodePoint(cell.codepoint) : ' ',
-              fg,
-              bg,
-              bold: !!(cell.flags & 1),
-              italic: !!(cell.flags & 4),
-              underline: !!(cell.flags & 8),
-            })
-          } else {
-            row.push({ char: ' ', fg: DEFAULT_FG, bg: DEFAULT_BG, bold: false, italic: false, underline: false })
+          if (cell?.codepoint && cell.codepoint !== 32) {
+            hasContent = true
+            break
           }
         }
-      } else {
-        for (let x = 0; x < cols; x++) {
-          row.push({ char: ' ', fg: DEFAULT_FG, bg: DEFAULT_BG, bold: false, italic: false, underline: false })
+        if (hasContent) {
+          lastContentRow = y
+          break
         }
       }
-      rows.push(row)
+    }
+
+    const captureRows = lastContentRow + 1
+    const rows: CellData[][] = []
+    for (let y = 0; y < captureRows; y++) {
+      rows.push(readGhosttyRow(wasmTerm, y, cols))
     }
 
     setScreen({
       rows,
-      cursor: { x: cursor?.x ?? 0, y: cursor?.y ?? 0, visible: cursor?.visible ?? true },
+      cursor: { x: cursor?.x ?? 0, y: cursorY, visible: cursor?.visible ?? true },
       cols,
-      totalRows,
+      totalRows: captureRows,
     })
   }, [])
 
@@ -139,12 +176,46 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
       const shell = new ShellAdapter(writer)
       shellRef.current = shell
 
+      // Flush ghostty content into React history before each new prompt
+      shell.setBeforePromptCallback(() => {
+        const wasmTerm = wasmTermRef.current
+        if (!wasmTerm) return
+        const cols = term.cols || 80
+        const totalRows = term.rows || 24
+        const cursor = wasmTerm.getCursor()
+        const cursorY = cursor?.y ?? 0
+
+        // Find last row with content (scan backward)
+        let lastContentRow = -1
+        for (let y = totalRows - 1; y >= 0; y--) {
+          const row = readGhosttyRow(wasmTerm, y, cols)
+          if (rowHasContent(row)) {
+            lastContentRow = y
+            break
+          }
+        }
+
+        if (lastContentRow >= 0) {
+          // Capture through max of last content row or cursor-1 (to preserve trailing blank lines)
+          const captureEnd = Math.max(lastContentRow, cursorY - 1)
+          const captured: CellData[][] = []
+          for (let y = 0; y <= captureEnd; y++) {
+            captured.push(readGhosttyRow(wasmTerm, y, cols))
+          }
+          setHistory((prev) => [...prev, ...captured])
+        }
+
+        // Clear ghostty so it starts fresh for the next prompt
+        term.write('\x1b[2J\x1b[H')
+      })
+
       shell.setContextProvider(() => ({
         cwd: cwdRef.current,
         setCwd: (path: string) => {
           cwdRef.current = path
           setCwdRef.current(path)
         },
+        clearHistory: () => setHistory([]),
       }))
 
       cleanupWindowAPI = installWindowAPI(writer, shell)
@@ -242,20 +313,42 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
     hiddenInputRef.current?.focus()
   }
 
+  const historyLen = history.length
+
   return (
     <div
       ref={containerRef}
       onClick={focusInput}
       className="bg-black text-neutral-300 font-mono text-sm leading-[1.2] p-28 h-screen w-screen box-border overflow-auto cursor-text"
     >
+      {history.map((row, i) => (
+        <div key={`h${i}`} className="whitespace-pre min-h-[1.2em]">
+          {row.map((cell, x) => (
+            <span
+              key={x}
+              className={[
+                cell.bold ? 'font-bold' : '',
+                cell.italic ? 'italic' : '',
+                cell.underline ? 'underline' : '',
+              ].filter(Boolean).join(' ') || undefined}
+              style={{
+                color: cell.fg !== DEFAULT_FG ? cell.fg : undefined,
+                backgroundColor: cell.bg !== DEFAULT_BG ? cell.bg : undefined,
+              }}
+            >
+              {cell.char}
+            </span>
+          ))}
+        </div>
+      ))}
       {screen && screen.rows.map((row, y) => {
         // Skip trailing empty rows
-        const hasContent = row.some((c) => c.char !== ' ')
+        const hasContent = rowHasContent(row)
         const hasCursor = screen.cursor.y === y && screen.cursor.visible
         if (!hasContent && !hasCursor && y > 0) return null
 
         return (
-          <div key={y} className="whitespace-pre min-h-[1.2em]">
+          <div key={`s${historyLen}-${y}`} className="whitespace-pre min-h-[1.2em]">
             {row.map((cell, x) => {
               const isCursor = screen.cursor.visible && screen.cursor.x === x && screen.cursor.y === y
 

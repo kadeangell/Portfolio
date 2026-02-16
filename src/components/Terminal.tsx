@@ -1,81 +1,259 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
+import { ShellAdapter } from '~/terminal/shell'
+import { installWindowAPI } from '~/terminal/api'
+
+interface CellData {
+  char: string
+  fg: string
+  bg: string
+  bold: boolean
+  italic: boolean
+  underline: boolean
+}
+
+interface CursorState {
+  x: number
+  y: number
+  visible: boolean
+}
+
+interface ScreenState {
+  rows: CellData[][]
+  cursor: CursorState
+  cols: number
+  totalRows: number
+}
+
+// Convert ghostty color value to CSS hex
+function colorToCSS(color: number, defaultColor: string): string {
+  if (color === 0) return defaultColor
+  const r = (color >> 16) & 0xff
+  const g = (color >> 8) & 0xff
+  const b = color & 0xff
+  return `rgb(${r},${g},${b})`
+}
 
 export function Terminal() {
-  const [input, setInput] = useState('')
-  const [cursorPos, setCursorPos] = useState(0)
-  const [history, setHistory] = useState<string[]>([])
-  const [focused, setFocused] = useState(true)
-  const hiddenInputRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const hiddenInputRef = useRef<HTMLTextAreaElement>(null)
+  const [screen, setScreen] = useState<ScreenState | null>(null)
+  const [focused, setFocused] = useState(true)
+  const wasmTermRef = useRef<any>(null)
+  const shellRef = useRef<ShellAdapter | null>(null)
+  const termRef = useRef<any>(null)
+
+  // Read cells from ghostty's buffer and update React state
+  const syncScreen = useCallback(() => {
+    const wasmTerm = wasmTermRef.current
+    const term = termRef.current
+    if (!wasmTerm || !term) return
+
+    const cols = term.cols || 80
+    const totalRows = term.rows || 24
+    const cursor = wasmTerm.getCursor()
+    const rows: CellData[][] = []
+
+    for (let y = 0; y < totalRows; y++) {
+      const cells = wasmTerm.getLine(y)
+      const row: CellData[] = []
+      if (cells) {
+        for (let x = 0; x < cols; x++) {
+          const cell = cells[x]
+          if (cell) {
+            row.push({
+              char: cell.codepoint ? String.fromCodePoint(cell.codepoint) : ' ',
+              fg: colorToCSS(cell.foreground, '#d4d4d4'),
+              bg: colorToCSS(cell.background, 'transparent'),
+              bold: !!cell.bold,
+              italic: !!cell.italic,
+              underline: !!cell.underline,
+            })
+          } else {
+            row.push({ char: ' ', fg: '#d4d4d4', bg: 'transparent', bold: false, italic: false, underline: false })
+          }
+        }
+      } else {
+        for (let x = 0; x < cols; x++) {
+          row.push({ char: ' ', fg: '#d4d4d4', bg: 'transparent', bold: false, italic: false, underline: false })
+        }
+      }
+      rows.push(row)
+    }
+
+    setScreen({
+      rows,
+      cursor: { x: cursor?.x ?? 0, y: cursor?.y ?? 0, visible: cursor?.visible ?? true },
+      cols,
+      totalRows,
+    })
+  }, [])
 
   useEffect(() => {
-    hiddenInputRef.current?.focus()
-  }, [])
+    let disposed = false
+    let cleanupWindowAPI: (() => void) | undefined
 
-  const focusInput = useCallback(() => {
-    hiddenInputRef.current?.focus()
-  }, [])
+    // Hidden container for ghostty WASM initialization
+    const hiddenContainer = document.createElement('div')
+    hiddenContainer.style.position = 'absolute'
+    hiddenContainer.style.left = '-9999px'
+    hiddenContainer.style.top = '-9999px'
+    hiddenContainer.style.width = '1px'
+    hiddenContainer.style.height = '1px'
+    hiddenContainer.style.overflow = 'hidden'
+    document.body.appendChild(hiddenContainer)
 
+    async function setup() {
+      const { init, Terminal: GhosttyTerminal } = await import('ghostty-web')
+      await init()
+
+      if (disposed) return
+
+      const term = new GhosttyTerminal({ fontSize: 14 })
+      term.open(hiddenContainer)
+      termRef.current = term
+      wasmTermRef.current = term.wasmTerm
+
+      // Create a writer that writes to ghostty's VT100 parser and syncs our UI
+      const writer = {
+        write(data: string) {
+          term.write(data)
+          syncScreen()
+        },
+      }
+
+      const shell = new ShellAdapter(writer)
+      shellRef.current = shell
+      cleanupWindowAPI = installWindowAPI(writer, shell)
+
+      // Print initial prompt and sync
+      shell.printPrompt()
+      syncScreen()
+
+      return () => {
+        term.dispose()
+      }
+    }
+
+    let termCleanup: (() => void) | undefined
+    setup().then((cleanup) => {
+      termCleanup = cleanup
+    })
+
+    return () => {
+      disposed = true
+      termCleanup?.()
+      cleanupWindowAPI?.()
+      document.body.removeChild(hiddenContainer)
+    }
+  }, [syncScreen])
+
+  // Keyboard input via hidden textarea
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    const shell = shellRef.current
+    if (!shell) return
+
+    // Prevent default for keys we handle
     if (e.key === 'Enter') {
       e.preventDefault()
-      setHistory((prev) => [...prev, `$ ${input}`])
-      setInput('')
-      setCursorPos(0)
+      shell.handleData('\r')
+    } else if (e.key === 'Backspace') {
+      e.preventDefault()
+      shell.handleData('\x7f')
+    } else if (e.key === 'Tab') {
+      e.preventDefault()
+      shell.handleData('\t')
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      shell.handleData('\x1b[A')
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      shell.handleData('\x1b[B')
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      shell.handleData('\x1b[C')
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      shell.handleData('\x1b[D')
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      shell.handleData('\x1b[H')
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      shell.handleData('\x1b[F')
+    } else if (e.key === 'Delete') {
+      e.preventDefault()
+      shell.handleData('\x1b[3~')
+    } else if (e.ctrlKey && e.key === 'c') {
+      e.preventDefault()
+      shell.handleData('\x03')
+    } else if (e.ctrlKey && e.key === 'd') {
+      e.preventDefault()
+      shell.handleData('\x04')
+    } else if (e.ctrlKey && e.key === 'l') {
+      e.preventDefault()
+      shell.handleData('\x0c')
+    } else if (e.ctrlKey && e.key === 'u') {
+      e.preventDefault()
+      shell.handleData('\x15')
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault()
+      shell.handleData(e.key)
     }
   }
 
-  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setInput(e.target.value)
-    setCursorPos(e.target.selectionStart ?? e.target.value.length)
+  function focusInput() {
+    hiddenInputRef.current?.focus()
   }
-
-  function handleSelect(e: React.SyntheticEvent<HTMLTextAreaElement>) {
-    const target = e.target as HTMLTextAreaElement
-    setCursorPos(target.selectionStart ?? 0)
-  }
-
-  const beforeCursor = input.slice(0, cursorPos)
-  const atCursor = input[cursorPos] ?? ' '
-  const afterCursor = input.slice(cursorPos + 1)
 
   return (
     <div
       ref={containerRef}
       onClick={focusInput}
-      className="bg-black text-neutral-300 font-mono text-sm leading-relaxed p-28 h-screen w-screen box-border overflow-auto cursor-text"
+      className="bg-black text-neutral-300 font-mono text-sm leading-[1.2] p-28 h-screen w-screen box-border overflow-auto cursor-text"
     >
-      <div className="whitespace-pre-wrap break-all">
-        {history.map((line, i) => (
-          <div key={i} className="min-h-[1.4em]">{line}</div>
-        ))}
-      </div>
-      <div className="flex whitespace-pre">
-        <span className="shrink-0">$&nbsp;</span>
-        <span>{beforeCursor}</span>
-        <span
-          className={`inline-block whitespace-pre ${
-            focused
-              ? 'bg-neutral-300 text-black animate-blink'
-              : 'bg-neutral-600 text-black'
-          }`}
-        >
-          {atCursor}
-        </span>
-        <span>{afterCursor}</span>
-      </div>
+      {screen && screen.rows.map((row, y) => {
+        // Skip trailing empty rows
+        const hasContent = row.some((c) => c.char !== ' ')
+        const hasCursor = screen.cursor.y === y && screen.cursor.visible
+        if (!hasContent && !hasCursor && y > 0) return null
+
+        return (
+          <div key={y} className="whitespace-pre min-h-[1.2em]">
+            {row.map((cell, x) => {
+              const isCursor = screen.cursor.visible && screen.cursor.x === x && screen.cursor.y === y
+
+              return (
+                <span
+                  key={x}
+                  className={[
+                    cell.bold ? 'font-bold' : '',
+                    cell.italic ? 'italic' : '',
+                    cell.underline ? 'underline' : '',
+                    isCursor && focused ? 'animate-blink' : '',
+                  ].filter(Boolean).join(' ') || undefined}
+                  style={{
+                    // color: isCursor && focused ? '#000' : cell.fg,
+                    backgroundColor: isCursor
+                      ? focused ? '#d4d4d4' : '#555'
+                      : cell.bg !== 'transparent' ? cell.bg : undefined,
+                  }}
+                >
+                  {cell.char}
+                </span>
+              )
+            })}
+          </div>
+        )
+      })}
       <textarea
         ref={hiddenInputRef}
-        value={input}
-        onChange={handleChange}
         onKeyDown={handleKeyDown}
-        onSelect={handleSelect}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         className="absolute -left-[9999px] -top-[9999px] opacity-0 w-0 h-0 p-0 border-none"
         autoComplete="off"
         spellCheck={false}
-        rows={1}
+        autoFocus
       />
     </div>
   )

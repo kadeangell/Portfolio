@@ -6,13 +6,14 @@ export interface CommandContext {
   cwd: string
   setCwd: (path: string) => void
   clearHistory: () => void
+  runProcess: (name: string, args: string[]) => void
 }
 
 export type CommandHandler = (
   args: string[],
   writer: TerminalWriter,
   ctx: CommandContext,
-) => void | Promise<void>
+) => void | 'suppress-prompt' | Promise<void | 'suppress-prompt'>
 
 export interface TerminalAPI {
   write(data: string): void

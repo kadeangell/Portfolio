@@ -10,7 +10,7 @@ export class ShellAdapter {
   private keybinds = new Map<string, () => void>()
   private escapeBuffer = ''
   private inEscapeSequence = false
-  private getContext: () => CommandContext = () => ({ cwd: '/', setCwd: () => {}, clearHistory: () => {} })
+  private getContext: () => CommandContext = () => ({ cwd: '/', setCwd: () => {}, clearHistory: () => {}, runProcess: () => {} })
   private onBeforePrompt: () => void = () => {}
   private onInputChange: (buffer: string, cursorPos: number) => void = () => {}
 
@@ -217,11 +217,14 @@ export class ShellAdapter {
         const line = this.inputBuffer.trim()
         this.inputBuffer = ''
         this.cursorPos = 0
+        let suppress = false
         if (line) {
-          this.executeCommand(line)
+          suppress = this.executeCommand(line) === 'suppress-prompt'
         }
         this.onBeforePrompt()
-        this.printPrompt()
+        if (!suppress) {
+          this.printPrompt()
+        }
         this.notifyInputChange()
         continue
       }
@@ -386,14 +389,17 @@ export class ShellAdapter {
     return false
   }
 
-  private executeCommand(line: string): void {
+  private executeCommand(line: string): 'suppress-prompt' | undefined {
     const parts = line.split(/\s+/)
     const name = parts[0]
     const args = parts.slice(1)
 
     const cmd = getCommand(name)
     if (cmd) {
-      cmd(args, this.writer, this.getContext())
+      const result = cmd(args, this.writer, this.getContext())
+      if (result === 'suppress-prompt') {
+        return 'suppress-prompt'
+      }
       this.writer.write('\r\n')
     } else {
       this.writer.write(`${name}: command not found\r\n`)

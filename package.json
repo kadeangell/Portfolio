@@ -11,12 +11,14 @@
     "start": "vite"
   },
   "dependencies": {
+    "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@tanstack/react-router": "^1",
     "@tanstack/react-start": "^1",
     "ghostty-web": "^0.4.0",
     "nuqs": "^2.8.8",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "vim-wasm": "^0.0.13"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",

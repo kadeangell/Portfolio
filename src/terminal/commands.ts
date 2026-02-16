@@ -14,6 +14,7 @@ commands.set('help', (_args, writer) => {
   writer.write('  ls       List directory contents\r\n')
   writer.write('  cd       Change directory\r\n')
   writer.write('  cat      Print file contents\r\n')
+  writer.write('  vim      Open file in Vim editor\r\n')
   writer.write('  rainbow  Test color output\r\n')
 })
 
@@ -157,6 +158,24 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
   return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)]
 }
+
+const vimHandler: CommandHandler = (args, writer, ctx) => {
+  const file = args[0]
+  if (file) {
+    const resolved = resolvePath(ctx.cwd, file)
+    const node = getNode(resolved)
+    if (node?.kind === 'dir') {
+      writer.write(`\r\nvim: ${file}: Is a directory`)
+      return
+    }
+  }
+  ctx.runProcess('vim', args)
+  return 'suppress-prompt'
+}
+
+commands.set('vim', vimHandler)
+commands.set('vi', vimHandler)
+commands.set('nvim', vimHandler)
 
 export function getCommand(name: string): CommandHandler | undefined {
   return commands.get(name)

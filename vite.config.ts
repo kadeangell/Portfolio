@@ -18,6 +18,42 @@ const mimeTypes: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+  '.data': 'application/octet-stream',
+}
+
+function serveVimWasm(): Plugin {
+  return {
+    name: 'serve-vim-wasm',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith('/vim-wasm/')) return next()
+
+        const filePath = join(process.cwd(), 'node_modules/vim-wasm', req.url.replace('/vim-wasm/', ''))
+        if (existsSync(filePath) && statSync(filePath).isFile()) {
+          const ext = extname(filePath)
+          res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream')
+          res.end(readFileSync(filePath))
+          return
+        }
+
+        next()
+      })
+    },
+  }
+}
+
+function crossOriginIsolation(): Plugin {
+  return {
+    name: 'cross-origin-isolation',
+    configureServer(server) {
+      server.middlewares.use((_req, res, next) => {
+        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
+        res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
+        next()
+      })
+    },
+  }
 }
 
 function serveLegacy(): Plugin {
@@ -58,6 +94,8 @@ function serveLegacy(): Plugin {
 
 export default defineConfig({
   plugins: [
+    crossOriginIsolation(),
+    serveVimWasm(),
     serveLegacy(),
     tailwindcss(),
     tsConfigPaths(),

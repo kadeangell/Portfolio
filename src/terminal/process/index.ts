@@ -1,0 +1,5 @@
+export type { WasmProcess, WasmProcessConfig } from './types'
+export type { ProcessFactory } from './registry'
+export { registerProcess, getProcess, getProcessNames } from './registry'
+export { VimWasmProcess } from './vim-adapter'
+export { WasiProcess } from './wasi-runner'

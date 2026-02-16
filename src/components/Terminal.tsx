@@ -1,7 +1,11 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 import { ShellAdapter } from '~/terminal/shell'
 import { installWindowAPI } from '~/terminal/api'
 import { printMotd } from '~/terminal/bashrc'
+import { getProcess, registerProcess, VimWasmProcess } from '~/terminal/process'
+import { readFile } from '~/terminal/fs'
+import { resolvePath } from '~/terminal/fs'
+import type { WasmProcess } from '~/terminal/process'
 
 interface CellData {
   char: string
@@ -17,9 +21,18 @@ interface TerminalProps {
   setCwd: (value: string | ((old: string) => string | null) | null) => void
 }
 
+type TerminalMode =
+  | { kind: 'shell' }
+  | { kind: 'process'; process: WasmProcess; cleanup: () => void }
+
 const DEFAULT_FG = 'rgb(204,204,204)'
 const DEFAULT_BG = 'rgb(0,0,0)'
 const EMPTY_CELL: CellData = { char: ' ', fg: DEFAULT_FG, bg: DEFAULT_BG, bold: false, italic: false, underline: false }
+
+// Register built-in process factories
+registerProcess('vim', (config) => new VimWasmProcess(config))
+registerProcess('vi', (config) => new VimWasmProcess(config))
+registerProcess('nvim', (config) => new VimWasmProcess(config))
 
 function cellFg(cell: any): string {
   return `rgb(${cell.fg_r},${cell.fg_g},${cell.fg_b})`
@@ -63,31 +76,84 @@ function rowHasContent(row: CellData[]): boolean {
 export function Terminal({ cwd, setCwd }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const hiddenInputRef = useRef<HTMLTextAreaElement>(null)
+  const processContainerRef = useRef<HTMLDivElement>(null)
   const [history, setHistory] = useState<CellData[][]>([])
   const [inputLine, setInputLine] = useState('')
   const [inputCursor, setInputCursor] = useState(0)
   const [displayCwd, setDisplayCwd] = useState(cwd)
   const [focused, setFocused] = useState(true)
+  const [mode, setMode] = useState<TerminalMode>({ kind: 'shell' })
   const wasmTermRef = useRef<any>(null)
   const shellRef = useRef<ShellAdapter | null>(null)
   const termRef = useRef<any>(null)
+  const modeRef = useRef(mode)
 
   const cwdRef = useRef(cwd)
   const setCwdRef = useRef(setCwd)
   useEffect(() => { cwdRef.current = cwd; setDisplayCwd(cwd) }, [cwd])
   useEffect(() => { setCwdRef.current = setCwd }, [setCwd])
+  useEffect(() => { modeRef.current = mode }, [mode])
 
-  // Focus the hidden input on mount
+  // Focus the hidden input on mount and when returning to shell mode
   useEffect(() => {
-    hiddenInputRef.current?.focus()
-  }, [])
+    if (mode.kind === 'shell') {
+      hiddenInputRef.current?.focus()
+    }
+  }, [mode])
 
   // Auto-scroll to bottom when content changes
   useEffect(() => {
-    if (containerRef.current) {
+    if (containerRef.current && mode.kind === 'shell') {
       containerRef.current.scrollTop = containerRef.current.scrollHeight
     }
-  }, [history, inputLine])
+  }, [history, inputLine, mode])
+
+  const runProcess = useCallback((name: string, args: string[]) => {
+    const factory = getProcess(name)
+    if (!factory) return
+
+    const container = processContainerRef.current
+    if (!container) return
+
+    // Read file content for vim if a filename was provided
+    const env: Record<string, string> = {}
+    if (args.length > 0) {
+      const resolved = resolvePath(cwdRef.current, args[0])
+      env['__VFS_PATH__'] = resolved
+      const content = readFile(resolved)
+      if (content !== null) {
+        env['__FILE_CONTENT__'] = content
+      }
+    }
+
+    const process = factory({
+      wasmUrl: '',
+      args,
+      env,
+      cwd: cwdRef.current,
+      cols: termRef.current?.cols || 80,
+      rows: termRef.current?.rows || 24,
+      container,
+    })
+
+    const cleanup = () => {
+      container.replaceChildren()
+      setMode({ kind: 'shell' })
+      // Re-print prompt after process exits
+      setTimeout(() => {
+        shellRef.current?.printPrompt()
+        hiddenInputRef.current?.focus()
+      }, 0)
+    }
+
+    process.onExit(() => cleanup())
+    setMode({ kind: 'process', process, cleanup })
+
+    process.start().catch((err) => {
+      console.error('Failed to start process:', err)
+      cleanup()
+    })
+  }, [])
 
   useEffect(() => {
     let disposed = false
@@ -169,6 +235,7 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
           setCwdRef.current(path)
         },
         clearHistory: () => setHistory([]),
+        runProcess,
       }))
 
       cleanupWindowAPI = installWindowAPI(writer, shell)
@@ -194,12 +261,15 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
       cleanupWindowAPI?.()
       document.body.removeChild(hiddenContainer)
     }
-  }, [])
+  }, [runProcess])
 
   // Keyboard input via hidden textarea
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     const shell = shellRef.current
     if (!shell) return
+
+    // In process mode, don't handle shell keys
+    if (modeRef.current.kind === 'process') return
 
     // Let browser hotkeys pass through (Cmd on macOS, Ctrl on Windows/Linux)
     const isMac = /mac|iphone|ipad|ipod/i.test(navigator.userAgent)
@@ -276,7 +346,9 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
   }
 
   function focusInput() {
-    hiddenInputRef.current?.focus()
+    if (mode.kind === 'shell') {
+      hiddenInputRef.current?.focus()
+    }
   }
 
   const promptText = displayCwd === '/' ? '~ $ ' : '~' + displayCwd + ' $ '
@@ -285,50 +357,60 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
     <div
       ref={containerRef}
       onClick={focusInput}
-      className="bg-black text-neutral-300 font-mono text-sm leading-[1.2] px-4 py-3 sm:px-[5vw] sm:py-[4vh] md:px-[8vw] md:py-[6vh] lg:px-[12vw] lg:py-[8vh] h-screen w-screen box-border overflow-auto cursor-text"
+      className={`bg-black text-neutral-300 font-mono text-sm leading-[1.2] px-4 py-3 sm:px-[5vw] sm:py-[4vh] md:px-[8vw] md:py-[6vh] lg:px-[12vw] lg:py-[8vh] h-screen w-screen box-border cursor-text ${
+        mode.kind === 'shell' ? 'overflow-auto' : 'overflow-hidden'
+      }`}
     >
-      {history.map((row, i) => (
-        <div key={`h${i}`} className="whitespace-pre min-h-[1.2em]">
-          {row.map((cell, x) => (
-            <span
-              key={x}
-              className={[
-                cell.bold ? 'font-bold' : '',
-                cell.italic ? 'italic' : '',
-                cell.underline ? 'underline' : '',
-              ].filter(Boolean).join(' ') || undefined}
-              style={{
-                color: cell.fg !== DEFAULT_FG ? cell.fg : undefined,
-                backgroundColor: cell.bg !== DEFAULT_BG ? cell.bg : undefined,
-              }}
-            >
-              {cell.char}
-            </span>
+      {mode.kind === 'shell' && (
+        <>
+          {history.map((row, i) => (
+            <div key={`h${i}`} className="whitespace-pre min-h-[1.2em]">
+              {row.map((cell, x) => (
+                <span
+                  key={x}
+                  className={[
+                    cell.bold ? 'font-bold' : '',
+                    cell.italic ? 'italic' : '',
+                    cell.underline ? 'underline' : '',
+                  ].filter(Boolean).join(' ') || undefined}
+                  style={{
+                    color: cell.fg !== DEFAULT_FG ? cell.fg : undefined,
+                    backgroundColor: cell.bg !== DEFAULT_BG ? cell.bg : undefined,
+                  }}
+                >
+                  {cell.char}
+                </span>
+              ))}
+            </div>
           ))}
-        </div>
-      ))}
-      <div className="whitespace-pre min-h-[1.2em]">
-        <span>{promptText}</span>
-        <span>{inputLine.slice(0, inputCursor)}</span>
-        <span
-          className={focused ? 'animate-blink' : undefined}
-          style={{ backgroundColor: focused ? '#d4d4d4' : '#555' }}
-        >
-          {inputLine[inputCursor] ?? ' '}
-        </span>
-        {inputCursor < inputLine.length && (
-          <span>{inputLine.slice(inputCursor + 1)}</span>
-        )}
-      </div>
-      <textarea
-        ref={hiddenInputRef}
-        onKeyDown={handleKeyDown}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        className="absolute -left-[9999px] -top-[9999px] opacity-0 w-0 h-0 p-0 border-none"
-        autoComplete="off"
-        spellCheck={false}
-        autoFocus
+          <div className="whitespace-pre min-h-[1.2em]">
+            <span>{promptText}</span>
+            <span>{inputLine.slice(0, inputCursor)}</span>
+            <span
+              className={focused ? 'animate-blink' : undefined}
+              style={{ backgroundColor: focused ? '#d4d4d4' : '#555' }}
+            >
+              {inputLine[inputCursor] ?? ' '}
+            </span>
+            {inputCursor < inputLine.length && (
+              <span>{inputLine.slice(inputCursor + 1)}</span>
+            )}
+          </div>
+          <textarea
+            ref={hiddenInputRef}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            className="absolute -left-[9999px] -top-[9999px] opacity-0 w-0 h-0 p-0 border-none"
+            autoComplete="off"
+            spellCheck={false}
+            autoFocus
+          />
+        </>
+      )}
+      <div
+        ref={processContainerRef}
+        className={mode.kind === 'process' ? 'w-full h-full relative' : 'hidden'}
       />
     </div>
   )

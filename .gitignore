@@ -1,13 +1,23 @@
-.DS_Store
+# Dependencies
 node_modules
-/build
-/static/build-git
-/.svelte-kit
-/package
+
+# Build outputs
+dist/
+/public/legacy/
+
+# Environment
 .env
 .env.*
 !.env.example
-.vercel
-.output
+
+# OS files
+.DS_Store
+
+# Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Legacy SvelteKit
+legacy/v1/.svelte-kit
+legacy/v1/node_modules
+legacy/v1/build

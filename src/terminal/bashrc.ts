@@ -1,0 +1,29 @@
+import type { TerminalWriter } from './types'
+
+const ESC = '\x1b'
+const RESET = `${ESC}[0m`
+const BOLD = `${ESC}[1m`
+const DIM = `${ESC}[2m`
+const GREEN = `${ESC}[32m`
+const CYAN = `${ESC}[36m`
+const WHITE = `${ESC}[37m`
+
+const LOGO = [
+  " _  __          _      ",
+  "| |/ /__ _  __| | ___ ",
+  "| ' // _` |/ _` |/ _ \\",
+  "| . \\ (_| | (_| |  __/",
+  "|_|\\_\\__,_|\\__,_|\\___|",
+]
+
+export function printMotd(writer: TerminalWriter): void {
+  writer.write('\r\n')
+  for (const line of LOGO) {
+    writer.write(`  ${CYAN}${line}${RESET}\r\n`)
+  }
+  writer.write('\r\n')
+  writer.write(`  ${BOLD}${WHITE}kade angell${RESET}${DIM} — software engineer${RESET}\r\n`)
+  writer.write('\r\n')
+  writer.write(`  ${DIM}${WHITE}type ${RESET}${GREEN}help${RESET}${DIM}${WHITE} for available commands${RESET}\r\n`)
+  writer.write('\r\n')
+}

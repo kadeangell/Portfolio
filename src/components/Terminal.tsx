@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { ShellAdapter } from '~/terminal/shell'
 import { installWindowAPI } from '~/terminal/api'
+import { printMotd } from '~/terminal/bashrc'
 
 interface CellData {
   char: string
@@ -24,13 +25,15 @@ interface ScreenState {
   totalRows: number
 }
 
-// Convert ghostty color value to CSS hex
-function colorToCSS(color: number, defaultColor: string): string {
-  if (color === 0) return defaultColor
-  const r = (color >> 16) & 0xff
-  const g = (color >> 8) & 0xff
-  const b = color & 0xff
-  return `rgb(${r},${g},${b})`
+const DEFAULT_FG = 'rgb(204,204,204)'
+const DEFAULT_BG = 'rgb(0,0,0)'
+
+function cellFg(cell: any): string {
+  return `rgb(${cell.fg_r},${cell.fg_g},${cell.fg_b})`
+}
+
+function cellBg(cell: any): string {
+  return `rgb(${cell.bg_r},${cell.bg_g},${cell.bg_b})`
 }
 
 export function Terminal() {
@@ -60,21 +63,23 @@ export function Terminal() {
         for (let x = 0; x < cols; x++) {
           const cell = cells[x]
           if (cell) {
+            const fg = cellFg(cell)
+            const bg = cellBg(cell)
             row.push({
               char: cell.codepoint ? String.fromCodePoint(cell.codepoint) : ' ',
-              fg: colorToCSS(cell.foreground, '#d4d4d4'),
-              bg: colorToCSS(cell.background, 'transparent'),
-              bold: !!cell.bold,
-              italic: !!cell.italic,
-              underline: !!cell.underline,
+              fg,
+              bg,
+              bold: !!(cell.flags & 1),
+              italic: !!(cell.flags & 4),
+              underline: !!(cell.flags & 8),
             })
           } else {
-            row.push({ char: ' ', fg: '#d4d4d4', bg: 'transparent', bold: false, italic: false, underline: false })
+            row.push({ char: ' ', fg: DEFAULT_FG, bg: DEFAULT_BG, bold: false, italic: false, underline: false })
           }
         }
       } else {
         for (let x = 0; x < cols; x++) {
-          row.push({ char: ' ', fg: '#d4d4d4', bg: 'transparent', bold: false, italic: false, underline: false })
+          row.push({ char: ' ', fg: DEFAULT_FG, bg: DEFAULT_BG, bold: false, italic: false, underline: false })
         }
       }
       rows.push(row)
@@ -125,7 +130,8 @@ export function Terminal() {
       shellRef.current = shell
       cleanupWindowAPI = installWindowAPI(writer, shell)
 
-      // Print initial prompt and sync
+      // Print MOTD and initial prompt
+      printMotd(writer)
       shell.printPrompt()
       syncScreen()
 
@@ -244,9 +250,10 @@ export function Terminal() {
                     isCursor && focused ? 'animate-blink' : '',
                   ].filter(Boolean).join(' ') || undefined}
                   style={{
+                    color: cell.fg !== DEFAULT_FG ? cell.fg : undefined,
                     backgroundColor: isCursor
                       ? focused ? '#d4d4d4' : '#555'
-                      : cell.bg !== 'transparent' ? cell.bg : undefined,
+                      : cell.bg !== DEFAULT_BG ? cell.bg : undefined,
                   }}
                 >
                   {cell.char}

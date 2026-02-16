@@ -141,9 +141,7 @@ export class ShellAdapter {
         // Ctrl+K — kill from cursor to end of line
         if (this.checkKeybind('ctrl+k')) continue
         if (this.cursorPos < this.inputBuffer.length) {
-          const killed = this.inputBuffer.length - this.cursorPos
           this.inputBuffer = this.inputBuffer.slice(0, this.cursorPos)
-          // Clear from cursor to end of line
           this.writer.write('\x1b[K')
         }
         continue

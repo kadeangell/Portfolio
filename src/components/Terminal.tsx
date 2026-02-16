@@ -43,7 +43,7 @@ export function Terminal() {
     <div
       ref={containerRef}
       onClick={focusInput}
-      className="bg-black text-neutral-300 font-mono text-sm leading-relaxed p-2 h-screen w-screen box-border overflow-auto cursor-text"
+      className="bg-black text-neutral-300 font-mono text-sm leading-relaxed p-28 h-screen w-screen box-border overflow-auto cursor-text"
     >
       <div className="whitespace-pre-wrap break-all">
         {history.map((line, i) => (

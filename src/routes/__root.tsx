@@ -38,8 +38,10 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
       <head>
         <HeadContent />
       </head>
-      <body className="m-0 p-0">
-        {children}
+      <body className="m-0 p-0 bg-black overflow-hidden">
+        <div className="crt-warp h-screen w-screen overflow-auto">
+          {children}
+        </div>
         <CRTOverlay />
         <Scripts />
       </body>

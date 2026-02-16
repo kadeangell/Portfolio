@@ -15,25 +15,44 @@ const FRAGMENT_SHADER = `
   uniform float uTime;
   uniform vec2 uResolution;
 
-  void main() {
-    vec2 uv = vUv;
+  // Barrel distortion — warp UVs outward from center to simulate curved glass
+  vec2 barrelDistort(vec2 uv, float strength) {
+    vec2 centered = uv - 0.5;
+    float r2 = dot(centered, centered);
+    vec2 warped = centered * (1.0 + strength * r2);
+    return warped + 0.5;
+  }
 
-    // Scanlines — darken every other pixel row
+  void main() {
+    vec2 uv = barrelDistort(vUv, 0.4);
+
+    // Discard pixels outside the warped screen area (creates rounded bezel)
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+      gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+
+    // Scanlines — curved with the distortion
     float scanline = sin(uv.y * uResolution.y * 3.14159);
     scanline = (scanline * 0.5 + 0.5) * 0.9 + 0.1;
     float scanAlpha = (1.0 - scanline) * 0.25;
 
-    // Vignette — darken edges
+    // Vignette — gentle darkening toward edges
     vec2 vignetteUv = uv * (1.0 - uv);
     float vignette = vignetteUv.x * vignetteUv.y * 15.0;
-    vignette = clamp(pow(vignette, 0.25), 0.0, 1.0);
+    vignette = clamp(pow(vignette, 0.3), 0.0, 1.0);
     float vignetteAlpha = (1.0 - vignette) * 0.4;
+
+    // Screen edge glow — bright highlight along the curved edges
+    float edgeDist = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+    float edgeGlow = smoothstep(0.0, 0.03, edgeDist);
+    float bezelAlpha = (1.0 - edgeGlow) * 0.6;
 
     // Subtle flicker
     float flicker = 1.0 + 0.01 * sin(uTime * 8.0) * sin(uTime * 3.0);
 
-    float alpha = (scanAlpha + vignetteAlpha) * flicker;
-    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
+    float alpha = (scanAlpha + vignetteAlpha + bezelAlpha) * flicker;
+    gl_FragColor = vec4(0.0, 0.0, 0.0, clamp(alpha, 0.0, 1.0));
   }
 `
 

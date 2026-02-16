@@ -92,6 +92,63 @@ export class ShellAdapter {
         continue
       }
 
+      if (code === 0x01) {
+        // Ctrl+A — move to beginning of line
+        if (this.checkKeybind('ctrl+a')) continue
+        if (this.cursorPos > 0) {
+          this.writer.write(`\x1b[${this.cursorPos}D`)
+          this.cursorPos = 0
+        }
+        continue
+      }
+
+      if (code === 0x05) {
+        // Ctrl+E — move to end of line
+        if (this.checkKeybind('ctrl+e')) continue
+        if (this.cursorPos < this.inputBuffer.length) {
+          const move = this.inputBuffer.length - this.cursorPos
+          this.writer.write(`\x1b[${move}C`)
+          this.cursorPos = this.inputBuffer.length
+        }
+        continue
+      }
+
+      if (code === 0x17) {
+        // Ctrl+W — delete word before cursor
+        if (this.checkKeybind('ctrl+w')) continue
+        if (this.cursorPos > 0) {
+          let pos = this.cursorPos
+          // Skip whitespace before cursor
+          while (pos > 0 && this.inputBuffer[pos - 1] === ' ') pos--
+          // Skip non-whitespace (the word)
+          while (pos > 0 && this.inputBuffer[pos - 1] !== ' ') pos--
+          const deleted = this.cursorPos - pos
+          const before = this.inputBuffer.slice(0, pos)
+          const after = this.inputBuffer.slice(this.cursorPos)
+          this.inputBuffer = before + after
+          // Move cursor back by deleted chars
+          this.writer.write(`\x1b[${deleted}D`)
+          // Rewrite rest of line + clear trailing chars
+          this.writer.write(after + ' '.repeat(deleted))
+          // Move cursor back to correct position
+          this.writer.write(`\x1b[${after.length + deleted}D`)
+          this.cursorPos = pos
+        }
+        continue
+      }
+
+      if (code === 0x0b) {
+        // Ctrl+K — kill from cursor to end of line
+        if (this.checkKeybind('ctrl+k')) continue
+        if (this.cursorPos < this.inputBuffer.length) {
+          const killed = this.inputBuffer.length - this.cursorPos
+          this.inputBuffer = this.inputBuffer.slice(0, this.cursorPos)
+          // Clear from cursor to end of line
+          this.writer.write('\x1b[K')
+        }
+        continue
+      }
+
       if (code === 0x15) {
         // Ctrl+U — clear line before cursor
         if (this.checkKeybind('ctrl+u')) continue

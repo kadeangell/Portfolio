@@ -195,6 +195,18 @@ export function Terminal() {
     } else if (e.ctrlKey && e.key === 'u') {
       e.preventDefault()
       shell.handleData('\x15')
+    } else if (e.ctrlKey && e.key === 'a') {
+      e.preventDefault()
+      shell.handleData('\x01')
+    } else if (e.ctrlKey && e.key === 'e') {
+      e.preventDefault()
+      shell.handleData('\x05')
+    } else if (e.ctrlKey && e.key === 'w') {
+      e.preventDefault()
+      shell.handleData('\x17')
+    } else if (e.ctrlKey && e.key === 'k') {
+      e.preventDefault()
+      shell.handleData('\x0b')
     } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
       e.preventDefault()
       shell.handleData(e.key)
@@ -232,7 +244,6 @@ export function Terminal() {
                     isCursor && focused ? 'animate-blink' : '',
                   ].filter(Boolean).join(' ') || undefined}
                   style={{
-                    // color: isCursor && focused ? '#000' : cell.fg,
                     backgroundColor: isCursor
                       ? focused ? '#d4d4d4' : '#555'
                       : cell.bg !== 'transparent' ? cell.bg : undefined,

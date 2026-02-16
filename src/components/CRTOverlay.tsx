@@ -40,8 +40,8 @@ const FRAGMENT_SHADER = `
     // Vignette — gentle darkening toward edges
     vec2 vignetteUv = uv * (1.0 - uv);
     float vignette = vignetteUv.x * vignetteUv.y * 15.0;
-    vignette = clamp(pow(vignette, 0.3), 0.0, 1.0);
-    float vignetteAlpha = (1.0 - vignette) * 0.4;
+    vignette = clamp(pow(vignette, 0.3), 0.0, 0.1);
+    float vignetteAlpha = (1.0 - vignette) * 0.2;
 
     // Screen edge glow — bright highlight along the curved edges
     float edgeDist = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));

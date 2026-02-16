@@ -285,7 +285,7 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
     <div
       ref={containerRef}
       onClick={focusInput}
-      className="bg-black text-neutral-300 font-mono text-sm leading-[1.2] p-28 h-screen w-screen box-border overflow-auto cursor-text"
+      className="bg-black text-neutral-300 font-mono text-sm leading-[1.2] px-4 py-3 sm:px-[5vw] sm:py-[4vh] md:px-[8vw] md:py-[6vh] lg:px-[12vw] lg:py-[8vh] h-screen w-screen box-border overflow-auto cursor-text"
     >
       {history.map((row, i) => (
         <div key={`h${i}`} className="whitespace-pre min-h-[1.2em]">

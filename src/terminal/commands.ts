@@ -16,6 +16,9 @@ commands.set('help', (_args, writer) => {
   writer.write('  cat      Print file contents\r\n')
   writer.write('  history  Show command history\r\n')
   writer.write('  vim      Open file in Vim editor\r\n')
+  writer.write('  github   Open GitHub profile\r\n')
+  writer.write('  linkedin Open LinkedIn profile\r\n')
+  writer.write('  legacy   Open legacy portfolio\r\n')
   writer.write('  rainbow  Test color output\r\n')
 })
 
@@ -170,6 +173,21 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
   return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)]
 }
+
+commands.set('github', (_args, writer) => {
+  writer.write('\r\nOpening GitHub...')
+  window.open('https://github.com/kadeangell', '_blank')
+})
+
+commands.set('linkedin', (_args, writer) => {
+  writer.write('\r\nOpening LinkedIn...')
+  window.open('https://www.linkedin.com/in/kade-angell', '_blank')
+})
+
+commands.set('legacy', (_args, writer) => {
+  writer.write('\r\nOpening legacy portfolio...')
+  window.open('/legacy/', '_blank')
+})
 
 const vimHandler: CommandHandler = (args, writer, ctx) => {
   const file = args[0]

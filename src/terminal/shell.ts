@@ -12,6 +12,7 @@ export class ShellAdapter {
   private inEscapeSequence = false
   private getContext: () => CommandContext = () => ({ cwd: '/', setCwd: () => {}, clearHistory: () => {} })
   private onBeforePrompt: () => void = () => {}
+  private onInputChange: (buffer: string, cursorPos: number) => void = () => {}
 
   constructor(writer: TerminalWriter) {
     this.writer = writer
@@ -23,6 +24,14 @@ export class ShellAdapter {
 
   setBeforePromptCallback(cb: () => void): void {
     this.onBeforePrompt = cb
+  }
+
+  setInputChangeCallback(cb: (buffer: string, cursorPos: number) => void): void {
+    this.onInputChange = cb
+  }
+
+  private notifyInputChange(): void {
+    this.onInputChange(this.inputBuffer, this.cursorPos)
   }
 
   printPrompt(): void {
@@ -60,6 +69,7 @@ export class ShellAdapter {
         }
         if (this.escapeBuffer.startsWith('[')) {
           this.handleEscapeSequence(this.escapeBuffer)
+          this.notifyInputChange()
         }
         this.inEscapeSequence = false
         this.escapeBuffer = ''
@@ -81,6 +91,7 @@ export class ShellAdapter {
         this.cursorPos = 0
         this.onBeforePrompt()
         this.printPrompt()
+        this.notifyInputChange()
         continue
       }
 
@@ -102,6 +113,7 @@ export class ShellAdapter {
         if (charsAfter > 0) {
           this.writer.write(`\x1b[${charsAfter}D`)
         }
+        this.notifyInputChange()
         continue
       }
 
@@ -112,6 +124,7 @@ export class ShellAdapter {
           this.writer.write(`\x1b[${this.cursorPos}D`)
           this.cursorPos = 0
         }
+        this.notifyInputChange()
         continue
       }
 
@@ -123,6 +136,7 @@ export class ShellAdapter {
           this.writer.write(`\x1b[${move}C`)
           this.cursorPos = this.inputBuffer.length
         }
+        this.notifyInputChange()
         continue
       }
 
@@ -147,6 +161,7 @@ export class ShellAdapter {
           this.writer.write(`\x1b[${after.length + deleted}D`)
           this.cursorPos = pos
         }
+        this.notifyInputChange()
         continue
       }
 
@@ -157,6 +172,7 @@ export class ShellAdapter {
           this.inputBuffer = this.inputBuffer.slice(0, this.cursorPos)
           this.writer.write('\x1b[K')
         }
+        this.notifyInputChange()
         continue
       }
 
@@ -175,6 +191,7 @@ export class ShellAdapter {
             this.writer.write(`\x1b[${remaining.length}D`)
           }
         }
+        this.notifyInputChange()
         continue
       }
 
@@ -190,6 +207,7 @@ export class ShellAdapter {
           this.writer.write(after + ' ')
           this.writer.write(`\x1b[${after.length + 1}D`)
         }
+        this.notifyInputChange()
         continue
       }
 
@@ -204,6 +222,7 @@ export class ShellAdapter {
         }
         this.onBeforePrompt()
         this.printPrompt()
+        this.notifyInputChange()
         continue
       }
 
@@ -225,6 +244,7 @@ export class ShellAdapter {
         if (after.length > 0) {
           this.writer.write(`\x1b[${after.length}D`)
         }
+        this.notifyInputChange()
       }
     }
   }
@@ -286,13 +306,15 @@ export class ShellAdapter {
       }
       if (completion === partial) {
         // No further completion possible — show options
-        const after = this.inputBuffer.slice(this.cursorPos)
         this.writer.write('\r\n' + matches.join('  ') + '\r\n')
+        this.onBeforePrompt()
         this.printPrompt()
         this.writer.write(this.inputBuffer)
+        const after = this.inputBuffer.slice(this.cursorPos)
         if (after.length > 0) {
           this.writer.write(`\x1b[${after.length}D`)
         }
+        this.notifyInputChange()
         return
       }
     }
@@ -309,6 +331,7 @@ export class ShellAdapter {
     if (after.length > 0) {
       this.writer.write(`\x1b[${after.length}D`)
     }
+    this.notifyInputChange()
   }
 
   private handleEscapeSequence(seq: string): void {

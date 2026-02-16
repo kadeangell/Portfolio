@@ -6,6 +6,7 @@ import {
   HeadContent,
   Scripts,
 } from '@tanstack/react-router'
+import { CRTOverlay } from '~/components/CRTOverlay'
 import '~/styles/app.css'
 
 export const Route = createRootRoute({
@@ -39,6 +40,7 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
       </head>
       <body className="m-0 p-0">
         {children}
+        <CRTOverlay />
         <Scripts />
       </body>
     </html>

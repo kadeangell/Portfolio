@@ -20,6 +20,7 @@ commands.set('help', (_args, writer) => {
   writer.write('  linkedin Open LinkedIn profile\r\n')
   writer.write('  legacy   Open legacy portfolio\r\n')
   writer.write('  rainbow  Test color output\r\n')
+  writer.write('  tmux     Terminal multiplexer\r\n')
 })
 
 commands.set('history', (_args, writer, ctx) => {
@@ -206,6 +207,14 @@ const vimHandler: CommandHandler = (args, writer, ctx) => {
 commands.set('vim', vimHandler)
 commands.set('vi', vimHandler)
 commands.set('nvim', vimHandler)
+
+commands.set('tmux', (_args, writer, ctx) => {
+  if (ctx.startTmux) {
+    ctx.startTmux()
+    return 'suppress-prompt'
+  }
+  writer.write('\r\ntmux: not available')
+})
 
 export function getCommand(name: string): CommandHandler | undefined {
   return commands.get(name)

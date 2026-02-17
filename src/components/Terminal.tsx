@@ -6,6 +6,9 @@ import { getProcess, registerProcess, VimWasmProcess } from '~/terminal/process'
 import { readFile } from '~/terminal/fs'
 import { resolvePath } from '~/terminal/fs'
 import type { WasmProcess } from '~/terminal/process'
+import { TmuxManager } from '~/terminal/tmux/manager'
+import { processTmuxKey } from '~/terminal/tmux/keybinds'
+import { TmuxView } from '~/components/tmux/TmuxView'
 
 interface CellData {
   char: string
@@ -73,6 +76,43 @@ function rowHasContent(row: CellData[]): boolean {
   return row.some((c) => c.char !== ' ')
 }
 
+/** Translate a KeyboardEvent to VT100 data string for the shell adapter. */
+function keyToVt100(e: React.KeyboardEvent<HTMLTextAreaElement>): string | null {
+  // Let browser hotkeys pass through
+  const isMac = /mac|iphone|ipad|ipod/i.test(navigator.userAgent)
+  const modKey = isMac ? e.metaKey : e.ctrlKey
+  if (modKey) {
+    const browserKeys = new Set(['l', 't', 'w', 'n', 'q', 'Tab', 'shift'])
+    if (e.shiftKey) return null
+    if (browserKeys.has(e.key)) return null
+  }
+  if (e.metaKey && isMac) return null
+
+  if (e.key === 'Enter') return '\r'
+  if (e.key === 'Backspace') return '\x7f'
+  if (e.key === 'Tab') return '\t'
+  if (e.key === 'ArrowUp') return '\x1b[A'
+  if (e.key === 'ArrowDown') return '\x1b[B'
+  if (e.key === 'ArrowRight') return '\x1b[C'
+  if (e.key === 'ArrowLeft') return '\x1b[D'
+  if (e.key === 'Home') return '\x1b[H'
+  if (e.key === 'End') return '\x1b[F'
+  if (e.key === 'Delete') return '\x1b[3~'
+  if (e.ctrlKey && e.key === 'c') return '\x03'
+  if (e.ctrlKey && e.key === 'd') return '\x04'
+  if (e.ctrlKey && e.key === 'l') return '\x0c'
+  if (e.ctrlKey && e.key === 'u') return '\x15'
+  if (e.ctrlKey && e.key === 'a') return '\x01'
+  if (e.ctrlKey && e.key === 'e') return '\x05'
+  if (e.ctrlKey && e.key === 'w') return '\x17'
+  if (e.ctrlKey && e.key === 'k') return '\x0b'
+  if (e.ctrlKey && e.key === 'r') return '\x12'
+  if (e.ctrlKey && e.key === 'g') return '\x07'
+  if (e.key === 'Escape') return '\x1b'
+  if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) return e.key
+  return null
+}
+
 export function Terminal({ cwd, setCwd }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const hiddenInputRef = useRef<HTMLTextAreaElement>(null)
@@ -88,6 +128,12 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
   const termRef = useRef<any>(null)
   const modeRef = useRef(mode)
 
+  // Tmux state
+  const [tmuxActive, setTmuxActive] = useState(false)
+  const [, setTmuxVersion] = useState(0) // bumped to trigger re-renders
+  const tmuxManagerRef = useRef<TmuxManager | null>(null)
+  const ghosttyModuleRef = useRef<any>(null)
+
   const cwdRef = useRef(cwd)
   const setCwdRef = useRef(setCwd)
   useEffect(() => { cwdRef.current = cwd }, [cwd])
@@ -96,17 +142,47 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
 
   // Focus the hidden input on mount and when returning to shell mode
   useEffect(() => {
-    if (mode.kind === 'shell') {
+    if (mode.kind === 'shell' || tmuxActive) {
       hiddenInputRef.current?.focus()
     }
-  }, [mode])
+  }, [mode, tmuxActive])
 
   // Auto-scroll to bottom when content changes
   useEffect(() => {
-    if (containerRef.current && mode.kind === 'shell') {
+    if (containerRef.current && mode.kind === 'shell' && !tmuxActive) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight
     }
-  }, [history, inputLine, mode])
+  }, [history, inputLine, mode, tmuxActive])
+
+  // Start tmux
+  const startTmux = useCallback(() => {
+    const module = ghosttyModuleRef.current
+    if (!module) return
+
+    const manager = new TmuxManager({
+      ghosttyModule: module,
+      initialCwd: cwdRef.current,
+      onChange: () => setTmuxVersion((v) => v + 1),
+    })
+
+    tmuxManagerRef.current = manager
+    setTmuxActive(true)
+  }, [])
+
+  // Detach tmux (dispose manager, restore original shell)
+  const detachTmux = useCallback(() => {
+    const manager = tmuxManagerRef.current
+    if (manager) {
+      manager.dispose()
+      tmuxManagerRef.current = null
+    }
+    setTmuxActive(false)
+    // Restore prompt in original shell
+    setTimeout(() => {
+      shellRef.current?.printPrompt()
+      hiddenInputRef.current?.focus()
+    }, 0)
+  }, [])
 
   const runProcess = useCallback((name: string, args: string[]) => {
     const factory = getProcess(name)
@@ -170,10 +246,14 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
     document.body.appendChild(hiddenContainer)
 
     async function setup() {
-      const { init, Terminal: GhosttyTerminal } = await import('ghostty-web')
+      const ghosttyModule = await import('ghostty-web')
+      const { init, Terminal: GhosttyTerminal } = ghosttyModule
       await init()
 
       if (disposed) return
+
+      // Store the module so TmuxManager can create additional terminals
+      ghosttyModuleRef.current = { Terminal: GhosttyTerminal }
 
       const term = new GhosttyTerminal({ fontSize: 14 })
       term.open(hiddenContainer)
@@ -237,6 +317,7 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
         clearHistory: () => setHistory([]),
         runProcess,
         getCommandHistory: () => shell.getHistory(),
+        startTmux,
       }))
 
       cleanupWindowAPI = installWindowAPI(writer, shell)
@@ -262,101 +343,58 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
       cleanupWindowAPI?.()
       document.body.removeChild(hiddenContainer)
     }
-  }, [runProcess])
+  }, [runProcess, startTmux])
 
   // Keyboard input via hidden textarea
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // ── Tmux mode ──────────────────────────────────────────────
+    if (tmuxActive) {
+      const manager = tmuxManagerRef.current
+      if (!manager) return
+
+      const action = processTmuxKey(e, manager)
+
+      if (action === 'passthrough') {
+        // Translate the key event to VT100 and send to active pane
+        const activePane = manager.getActivePane()
+        if (!activePane) return
+
+        // If active pane is in process mode, let the process handle it
+        if (activePane.getMode() === 'process') return
+
+        const data = keyToVt100(e)
+        if (data !== null) {
+          e.preventDefault()
+          activePane.handleKeyData(data)
+        }
+        return
+      }
+
+      if (action === 'detach') {
+        detachTmux()
+        return
+      }
+
+      // 'handled' and 'activate-prefix' — already handled by processTmuxKey
+      return
+    }
+
+    // ── Normal mode ────────────────────────────────────────────
     const shell = shellRef.current
     if (!shell) return
 
     // In process mode, don't handle shell keys
     if (modeRef.current.kind === 'process') return
 
-    // Let browser hotkeys pass through (Cmd on macOS, Ctrl on Windows/Linux)
-    const isMac = /mac|iphone|ipad|ipod/i.test(navigator.userAgent)
-    const modKey = isMac ? e.metaKey : e.ctrlKey
-    if (modKey) {
-      const browserKeys = new Set(['l', 't', 'w', 'n', 'q', 'Tab', 'shift'])
-      // Cmd/Ctrl+Shift combos (e.g. Cmd+Shift+T to reopen tab)
-      if (e.shiftKey) return
-      if (browserKeys.has(e.key)) return
-    }
-
-    // On macOS, also let Cmd+<key> combos through that aren't terminal shortcuts
-    if (e.metaKey && isMac) return
-
-    // Prevent default for keys we handle
-    if (e.key === 'Enter') {
+    const data = keyToVt100(e)
+    if (data !== null) {
       e.preventDefault()
-      shell.handleData('\r')
-    } else if (e.key === 'Backspace') {
-      e.preventDefault()
-      shell.handleData('\x7f')
-    } else if (e.key === 'Tab') {
-      e.preventDefault()
-      shell.handleData('\t')
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      shell.handleData('\x1b[A')
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      shell.handleData('\x1b[B')
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault()
-      shell.handleData('\x1b[C')
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault()
-      shell.handleData('\x1b[D')
-    } else if (e.key === 'Home') {
-      e.preventDefault()
-      shell.handleData('\x1b[H')
-    } else if (e.key === 'End') {
-      e.preventDefault()
-      shell.handleData('\x1b[F')
-    } else if (e.key === 'Delete') {
-      e.preventDefault()
-      shell.handleData('\x1b[3~')
-    } else if (e.ctrlKey && e.key === 'c') {
-      e.preventDefault()
-      shell.handleData('\x03')
-    } else if (e.ctrlKey && e.key === 'd') {
-      e.preventDefault()
-      shell.handleData('\x04')
-    } else if (e.ctrlKey && e.key === 'l') {
-      e.preventDefault()
-      shell.handleData('\x0c')
-    } else if (e.ctrlKey && e.key === 'u') {
-      e.preventDefault()
-      shell.handleData('\x15')
-    } else if (e.ctrlKey && e.key === 'a') {
-      e.preventDefault()
-      shell.handleData('\x01')
-    } else if (e.ctrlKey && e.key === 'e') {
-      e.preventDefault()
-      shell.handleData('\x05')
-    } else if (e.ctrlKey && e.key === 'w') {
-      e.preventDefault()
-      shell.handleData('\x17')
-    } else if (e.ctrlKey && e.key === 'k') {
-      e.preventDefault()
-      shell.handleData('\x0b')
-    } else if (e.ctrlKey && e.key === 'r') {
-      e.preventDefault()
-      shell.handleData('\x12')
-    } else if (e.ctrlKey && e.key === 'g') {
-      e.preventDefault()
-      shell.handleData('\x07')
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      shell.handleData('\x1b')
-    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault()
-      shell.handleData(e.key)
+      shell.handleData(data)
     }
   }
 
   function focusInput() {
-    if (mode.kind === 'shell') {
+    if (mode.kind === 'shell' || tmuxActive) {
       hiddenInputRef.current?.focus()
     }
   }
@@ -365,60 +403,71 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
     <div
       ref={containerRef}
       onClick={focusInput}
-      className={`bg-black text-neutral-300 font-mono text-sm leading-[1.2] px-4 py-3 sm:px-[5vw] sm:py-[4vh] md:px-[8vw] md:py-[6vh] lg:px-[12vw] lg:py-[8vh] h-screen w-screen box-border cursor-text ${
-        mode.kind === 'shell' ? 'overflow-auto' : 'overflow-hidden'
+      className={`bg-black text-neutral-300 font-mono text-sm leading-[1.2] h-screen w-screen box-border cursor-text ${
+        tmuxActive
+          ? 'overflow-hidden px-4 py-3 sm:px-[5vw] sm:py-[4vh] md:px-[8vw] md:py-[6vh] lg:px-[12vw] lg:py-[8vh]'
+          : mode.kind === 'shell'
+            ? 'overflow-auto px-4 py-3 sm:px-[5vw] sm:py-[4vh] md:px-[8vw] md:py-[6vh] lg:px-[12vw] lg:py-[8vh]'
+            : 'overflow-hidden px-4 py-3 sm:px-[5vw] sm:py-[4vh] md:px-[8vw] md:py-[6vh] lg:px-[12vw] lg:py-[8vh]'
       }`}
     >
-      {mode.kind === 'shell' && (
+      {tmuxActive && tmuxManagerRef.current ? (
+        <TmuxView manager={tmuxManagerRef.current} focused={focused} />
+      ) : (
         <>
-          {history.map((row, i) => (
-            <div key={`h${i}`} className="whitespace-pre min-h-[1.2em]">
-              {row.map((cell, x) => (
-                <span
-                  key={x}
-                  className={[
-                    cell.bold ? 'font-bold' : '',
-                    cell.italic ? 'italic' : '',
-                    cell.underline ? 'underline' : '',
-                  ].filter(Boolean).join(' ') || undefined}
-                  style={{
-                    color: cell.fg !== DEFAULT_FG ? cell.fg : undefined,
-                    backgroundColor: cell.bg !== DEFAULT_BG ? cell.bg : undefined,
-                  }}
-                >
-                  {cell.char}
-                </span>
+          {mode.kind === 'shell' && (
+            <>
+              {history.map((row, i) => (
+                <div key={`h${i}`} className="whitespace-pre min-h-[1.2em]">
+                  {row.map((cell, x) => (
+                    <span
+                      key={x}
+                      className={[
+                        cell.bold ? 'font-bold' : '',
+                        cell.italic ? 'italic' : '',
+                        cell.underline ? 'underline' : '',
+                      ].filter(Boolean).join(' ') || undefined}
+                      style={{
+                        color: cell.fg !== DEFAULT_FG ? cell.fg : undefined,
+                        backgroundColor: cell.bg !== DEFAULT_BG ? cell.bg : undefined,
+                      }}
+                    >
+                      {cell.char}
+                    </span>
+                  ))}
+                </div>
               ))}
-            </div>
-          ))}
-          <div className="whitespace-pre min-h-[1.2em]">
-            <span>{promptText}</span>
-            <span>{inputLine.slice(0, inputCursor)}</span>
-            <span
-              className={focused ? 'animate-blink' : undefined}
-              style={{ backgroundColor: focused ? '#d4d4d4' : '#555' }}
-            >
-              {inputLine[inputCursor] ?? ' '}
-            </span>
-            {inputCursor < inputLine.length && (
-              <span>{inputLine.slice(inputCursor + 1)}</span>
-            )}
-          </div>
-          <textarea
-            ref={hiddenInputRef}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            className="absolute -left-[9999px] -top-[9999px] opacity-0 w-0 h-0 p-0 border-none"
-            autoComplete="off"
-            spellCheck={false}
-            autoFocus
+              <div className="whitespace-pre min-h-[1.2em]">
+                <span>{promptText}</span>
+                <span>{inputLine.slice(0, inputCursor)}</span>
+                <span
+                  className={focused ? 'animate-blink' : undefined}
+                  style={{ backgroundColor: focused ? '#d4d4d4' : '#555' }}
+                >
+                  {inputLine[inputCursor] ?? ' '}
+                </span>
+                {inputCursor < inputLine.length && (
+                  <span>{inputLine.slice(inputCursor + 1)}</span>
+                )}
+              </div>
+            </>
+          )}
+          <div
+            ref={processContainerRef}
+            className={mode.kind === 'process' ? 'w-full h-full relative' : 'hidden'}
           />
         </>
       )}
-      <div
-        ref={processContainerRef}
-        className={mode.kind === 'process' ? 'w-full h-full relative' : 'hidden'}
+      {/* Hidden textarea — always present as keyboard entry point */}
+      <textarea
+        ref={hiddenInputRef}
+        onKeyDown={handleKeyDown}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        className="absolute -left-[9999px] -top-[9999px] opacity-0 w-0 h-0 p-0 border-none"
+        autoComplete="off"
+        spellCheck={false}
+        autoFocus
       />
     </div>
   )

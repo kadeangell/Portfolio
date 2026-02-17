@@ -8,6 +8,7 @@ export interface CommandContext {
   clearHistory: () => void
   runProcess: (name: string, args: string[]) => void
   getCommandHistory: () => string[]
+  startTmux?: () => void
 }
 
 export type CommandHandler = (

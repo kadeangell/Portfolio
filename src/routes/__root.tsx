@@ -50,7 +50,7 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
         <div className="crt-warp h-screen w-screen overflow-auto">
           {children}
         </div>
-        {/* <CRTOverlay /> */}
+        <CRTOverlay />
         <Scripts />
       </body>
     </html>

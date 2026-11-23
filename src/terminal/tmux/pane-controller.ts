@@ -101,6 +101,9 @@ export class PaneController {
     // Create ghostty terminal
     const GhosttyTerminal = this.ghosttyModule.Terminal
     this.term = new GhosttyTerminal({ fontSize: 14 })
+    // Offscreen, VT100-parsing only: input comes from the Terminal's hidden
+    // textarea. ghostty's open() calls focus(), which would steal that focus.
+    this.term.focus = () => {}
     this.term.open(this.hiddenContainer)
     this.wasmTerm = this.term.wasmTerm
 

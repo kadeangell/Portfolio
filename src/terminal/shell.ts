@@ -74,6 +74,8 @@ export class ShellAdapter {
 
   printPrompt(): void {
     this.writer.write(this.buildPrompt())
+    // The UI renders the prompt from React state, so push it out too
+    this.notifyInputChange()
   }
 
   getHistory(): string[] {

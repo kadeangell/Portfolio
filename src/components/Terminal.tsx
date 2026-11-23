@@ -256,6 +256,10 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
       ghosttyModuleRef.current = { Terminal: GhosttyTerminal }
 
       const term = new GhosttyTerminal({ fontSize: 14 })
+      // This terminal is offscreen and only parses VT100; keyboard input comes
+      // from our hidden textarea. ghostty's open() calls focus() (twice, once
+      // in a setTimeout), which would steal focus from that textarea.
+      term.focus = () => {}
       term.open(hiddenContainer)
       termRef.current = term
       wasmTermRef.current = term.wasmTerm

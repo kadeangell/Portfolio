@@ -1,0 +1,7 @@
+# Cross-origin isolation, required for SharedArrayBuffer (vim-wasm).
+# On GitHub Pages this needed coi-serviceworker.js because headers can't be set
+# there. The service worker is skipped automatically once these headers make the
+# page cross-origin isolated.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp

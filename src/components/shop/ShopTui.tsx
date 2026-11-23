@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { PRODUCTS } from '~/shop/products'
 import { ModelViewport } from './ModelViewport'
 
 const ACCENT = '#4ade80'
 const TYPE_INTERVAL_MS = 22
-const DEFAULT_STATUS = 'Use ← → to browse, enter to buy. Drag the model to spin it.'
+const DEFAULT_STATUS = 'Use ← → to browse, enter to buy, ctrl+c to exit. Drag the model to spin it.'
 
 // The page's CRT shader warps the screen like curved glass: the corners are
 // pushed off-screen (black) and the edges are dimmed. So nothing is anchored to
@@ -132,6 +132,7 @@ function ConfirmDialog({ productName, choice, onChoose, onRun }: ConfirmDialogPr
 }
 
 export function ShopTui() {
+  const navigate = useNavigate()
   const [selected, setSelected] = useState(0)
   const [status, setStatus] = useState(DEFAULT_STATUS)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -163,6 +164,14 @@ export function ShopTui() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ctrl+C leaves the shop, like interrupting a program in a terminal.
+      // Left alone if text is selected, so copying still works.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'c') {
+        if (window.getSelection()?.toString()) return
+        e.preventDefault()
+        navigate({ to: '/' })
+        return
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return
 
       if (dialogOpen) {
@@ -193,7 +202,7 @@ export function ShopTui() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected, select, dialogOpen, choice, openDialog, runChoice])
+  }, [selected, select, dialogOpen, choice, openDialog, runChoice, navigate])
 
   return (
     <div className="flex h-screen w-screen flex-col bg-black px-[11vw] py-[9vh] font-mono text-sm text-neutral-300">

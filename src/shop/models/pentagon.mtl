@@ -1,0 +1,12 @@
+newmtl sky
+Kd 0.298 0.788 0.941
+
+newmtl lime
+Kd 0.710 0.894 0.549
+
+newmtl rose
+Kd 0.969 0.145 0.522
+
+newmtl base
+Kd 0.420 0.447 0.502
+

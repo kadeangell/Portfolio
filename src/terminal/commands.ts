@@ -19,6 +19,7 @@ commands.set('help', (_args, writer) => {
   writer.write('  github   Open GitHub profile\r\n')
   writer.write('  linkedin Open LinkedIn profile\r\n')
   writer.write('  legacy   Open legacy portfolio\r\n')
+  writer.write('  shop     Browse the shape shop\r\n')
   writer.write('  rainbow  Test color output\r\n')
   writer.write('  tmux     Terminal multiplexer\r\n')
 })
@@ -188,6 +189,11 @@ commands.set('linkedin', (_args, writer) => {
 commands.set('legacy', (_args, writer) => {
   writer.write('\r\nOpening legacy portfolio...')
   window.open('/legacy/', '_blank')
+})
+
+commands.set('shop', (_args, writer) => {
+  writer.write('\r\nOpening shop...')
+  window.location.assign('/shop')
 })
 
 const vimHandler: CommandHandler = (args, writer, ctx) => {

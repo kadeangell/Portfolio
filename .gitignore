@@ -22,3 +22,7 @@ vite.config.ts.timestamp-*
 legacy/v1/.svelte-kit
 legacy/v1/node_modules
 legacy/v1/build
+
+# Cloudflare
+.wrangler/
+.dev.vars

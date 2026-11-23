@@ -12,23 +12,24 @@
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
-    "@tanstack/react-router": "^1",
-    "@tanstack/react-start": "^1",
+    "@tanstack/react-router": "^1.170.46",
+    "@tanstack/react-start": "^1.169.7",
     "ghostty-web": "^0.4.0",
-    "nuqs": "^2.8.8",
-    "react": "^19",
-    "react-dom": "^19",
+    "nuqs": "^2.10.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "vim-wasm": "^0.0.13"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.18",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^4",
     "babel-plugin-react-compiler": "^1.0.0",
-    "tailwindcss": "^4.1.18",
-    "typescript": "^5",
-    "vite": "^7",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
     "vite-tsconfig-paths": "^5"
   }
 }

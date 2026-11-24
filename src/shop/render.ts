@@ -117,6 +117,64 @@ export function renderModel(
   return { cols, rows, chars, colors }
 }
 
+/**
+ * Draw the front-facing triangle edges as line characters: a second ASCII view
+ * of the same model.
+ */
+export function renderWire(
+  model: Model,
+  cols: number,
+  rows: number,
+  yaw: number,
+  pitch: number,
+  radius = modelRadius(model),
+): Frame {
+  const size = cols * rows
+  const chars: string[] = new Array(size).fill(' ')
+  const colors = new Uint32Array(size)
+  const scale = Math.min(rows / 2, cols / 2 / CELL_ASPECT) * 0.92 / radius
+  const cx = cols / 2
+  const cy = rows / 2
+
+  for (const tri of model.triangles) {
+    const a = rotate(tri.a, yaw, pitch)
+    const b = rotate(tri.b, yaw, pitch)
+    const c = rotate(tri.c, yaw, pitch)
+    // z of the face normal; <= 0 faces away from the camera
+    if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) <= 0) continue
+
+    const packed = (Math.round(tri.color[0]) << 16) | (Math.round(tri.color[1]) << 8) | Math.round(tri.color[2])
+    const pts = [a, b, c].map((p) => [cx + p[0] * scale * CELL_ASPECT, cy - p[1] * scale])
+    for (let i = 0; i < 3; i++) {
+      const [x0, y0] = pts[i]
+      const [x1, y1] = pts[(i + 1) % 3]
+      const dx = x1 - x0
+      const dy = y1 - y0
+      const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)))
+      // slope in visual space (a cell is twice as tall as it is wide)
+      const ang = (Math.atan2(-dy * CELL_ASPECT, dx) + Math.PI) % Math.PI
+      const ch =
+        ang < Math.PI / 8 || ang >= (7 * Math.PI) / 8
+          ? '-'
+          : ang < (3 * Math.PI) / 8
+            ? '/'
+            : ang < (5 * Math.PI) / 8
+              ? '|'
+              : '\\'
+      for (let s = 0; s <= steps; s++) {
+        const t = steps ? s / steps : 0
+        const x = Math.floor(x0 + dx * t)
+        const y = Math.floor(y0 + dy * t)
+        if (x >= 0 && x < cols && y >= 0 && y < rows) {
+          chars[y * cols + x] = ch
+          colors[y * cols + x] = packed
+        }
+      }
+    }
+  }
+  return { cols, rows, chars, colors }
+}
+
 /** Serialize a frame to HTML: one <span> per run of same-colored cells. */
 export function frameToHtml(frame: Frame): string {
   const { cols, rows, chars, colors } = frame

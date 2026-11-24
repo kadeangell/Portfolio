@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Model } from '~/shop/obj'
-import { frameToHtml, modelRadius, renderModel } from '~/shop/render'
+import { frameToHtml, modelRadius, renderModel, renderWire } from '~/shop/render'
 
 const AUTO_SPIN = 0.6 // radians per second
 const DRAG_SENSITIVITY = 0.012 // radians per pixel
@@ -8,6 +8,8 @@ const MAX_PITCH = 1.3
 
 interface ModelViewportProps {
   model: Model
+  /** 'shaded' fills faces; 'wire' draws edges */
+  mode?: 'shaded' | 'wire'
 }
 
 /**
@@ -15,7 +17,7 @@ interface ModelViewportProps {
  * The grid is sized to fit the container using the measured glyph size.
  * Frames are written straight to the DOM, bypassing React state.
  */
-export function ModelViewport({ model }: ModelViewportProps) {
+export function ModelViewport({ model, mode = 'shaded' }: ModelViewportProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const preRef = useRef<HTMLPreElement>(null)
   const measureRef = useRef<HTMLSpanElement>(null)
@@ -52,7 +54,8 @@ export function ModelViewport({ model }: ModelViewportProps) {
       if (!dragging.current && !reduceMotion) angles.current.yaw += AUTO_SPIN * dt
       if (cols && rows) {
         const { yaw, pitch } = angles.current
-        pre.innerHTML = frameToHtml(renderModel(model, cols, rows, yaw, pitch, radius))
+        const render = mode === 'wire' ? renderWire : renderModel
+        pre.innerHTML = frameToHtml(render(model, cols, rows, yaw, pitch, radius))
       }
       raf = requestAnimationFrame(tick)
     }
@@ -62,7 +65,7 @@ export function ModelViewport({ model }: ModelViewportProps) {
       cancelAnimationFrame(raf)
       observer.disconnect()
     }
-  }, [model])
+  }, [model, mode])
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     dragging.current = { x: e.clientX, y: e.clientY }

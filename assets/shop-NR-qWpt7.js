@@ -1,4 +1,4 @@
-import{_ as e,b as t,g as n,v as r,x as i,y as a}from"./index-CCRSx9Si.js";var o=i(t(),1),s=n();function c(e){let t=new Map,n=null;for(let r of e.split(`
+import{_ as e,b as t,g as n,v as r,x as i,y as a}from"./index-Cx9Q8hIw.js";var o=i(t(),1),s=n();function c(e){let t=new Map,n=null;for(let r of e.split(`
 `)){let e=r.trim();if(e.startsWith(`newmtl `))n=e.slice(7).trim();else if(n&&e.startsWith(`Kd `)){let[r,i,a]=e.slice(3).trim().split(/\s+/).map(Number);t.set(n,[r*255,i*255,a*255])}}return t}function l(e,t){let n=c(t),r=[],i=[],a=[200,200,200],o=0;for(let t of e.split(`
 `)){let e=t.trim();if(e.startsWith(`v `)){let[t,n,i]=e.slice(2).trim().split(/\s+/).map(Number);r.push([t,n,i])}else if(e.startsWith(`usemtl `))a=n.get(e.slice(7).trim())??a;else if(e.startsWith(`f `)){let t=e.slice(2).trim().split(/\s+/).map(e=>{let t=parseInt(e.split(`/`)[0],10);return t<0?r.length+t:t-1});o++;for(let e=1;e<t.length-1;e++)i.push({a:r[t[0]],b:r[t[e]],c:r[t[e+1]],color:a})}}return{triangles:i,vertexCount:r.length,faceCount:o}}var u=`# question mark
 mtllib question.mtl
@@ -1032,26 +1032,26 @@ f 309 319 320
 f 309 320 310
 f 310 320 311
 f 310 311 301
-f 322 1 2
-f 322 2 3
-f 322 3 4
-f 322 4 5
-f 322 5 6
-f 322 6 7
-f 322 7 8
-f 322 8 9
-f 322 9 10
-f 322 10 1
-f 323 312 311
-f 323 313 312
-f 323 314 313
-f 323 315 314
-f 323 316 315
-f 323 317 316
-f 323 318 317
-f 323 319 318
-f 323 320 319
-f 323 311 320
+f 321 1 2
+f 321 2 3
+f 321 3 4
+f 321 4 5
+f 321 5 6
+f 321 6 7
+f 321 7 8
+f 321 8 9
+f 321 9 10
+f 321 10 1
+f 322 312 311
+f 322 313 312
+f 322 314 313
+f 322 315 314
+f 322 316 315
+f 322 317 316
+f 322 318 317
+f 322 319 318
+f 322 320 319
+f 322 311 320
 f 323 325 324
 f 408 396 397
 f 323 326 325

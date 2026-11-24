@@ -1,0 +1,12 @@
+ _  __          _
+| |/ /__ _  __| | ___
+| ' // _` |/ _` |/ _ \
+| . \ (_| | (_| |  __/
+|_|\_\__,_|\__,_|\___|
+
+kade angell — software engineer
+
+nice, you curl'd my website. try ssh kadeangell.com next time
+
+github    https://github.com/kadeangell
+linkedin  https://www.linkedin.com/in/kade-angell

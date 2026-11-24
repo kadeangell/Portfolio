@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"flag"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -170,13 +173,39 @@ func handle(sess ssh.Session, api string) {
 	newShell(sess, in, rz, pty.Term, sess.Environ(), fs).Run()
 }
 
-// serveRedirect answers every HTTP request with a permanent redirect to the
-// website, keeping the path and query. Used when the apex domain points here.
-func serveRedirect(addr string) {
-	err := http.ListenAndServe(addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//go:embed content/curl.txt
+var curlText string
+
+// isCLI reports whether the User-Agent is a command-line HTTP client.
+func isCLI(ua string) bool {
+	ua = strings.ToLower(ua)
+	for _, c := range []string{"curl/", "wget/", "httpie/", "xh/", "libcurl"} {
+		if strings.Contains(ua, c) {
+			return true
+		}
+	}
+	return false
+}
+
+// webHandler is what the apex domain serves: command-line clients get a short
+// plain-text message, browsers get a permanent redirect to the website.
+func webHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isCLI(r.UserAgent()) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			if r.Method != http.MethodHead {
+				io.WriteString(w, curlText)
+			}
+			return
+		}
 		http.Redirect(w, r, "https://www.kadeangell.com"+r.URL.RequestURI(), http.StatusMovedPermanently)
-	}))
-	if err != nil {
-		log.Printf("redirect server: %v", err)
+	})
+}
+
+// serveRedirect serves webHandler on addr. Used when the apex domain points here.
+func serveRedirect(addr string) {
+	if err := http.ListenAndServe(addr, webHandler()); err != nil {
+		log.Printf("web server: %v", err)
 	}
 }

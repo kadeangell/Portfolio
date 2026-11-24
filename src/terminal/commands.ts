@@ -19,7 +19,7 @@ commands.set('help', (_args, writer) => {
   writer.write('  github   Open GitHub profile\r\n')
   writer.write('  linkedin Open LinkedIn profile\r\n')
   writer.write('  legacy   Open legacy portfolio\r\n')
-  writer.write('  shop     Browse the shape shop\r\n')
+  writer.write('  shop     Browse the shop\r\n')
   writer.write('  rainbow  Test color output\r\n')
   writer.write('  tmux     Terminal multiplexer\r\n')
 })

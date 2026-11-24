@@ -54,6 +54,12 @@ func loadProducts() ([]product, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseProducts(raw)
+}
+
+// parseProducts builds products from a products.json document, reading each
+// model and image from the embedded content directory.
+func parseProducts(raw []byte) ([]product, error) {
 	var ps []product
 	if err := json.Unmarshal(raw, &ps); err != nil {
 		return nil, err

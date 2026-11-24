@@ -291,7 +291,7 @@ export function ShopTui() {
     <div className="flex h-screen w-screen flex-col bg-black px-[11vw] py-[9vh] font-mono text-sm text-neutral-300">
       <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col text-center">
         <h1 className="m-0 text-sm font-bold tracking-widest" style={{ color: ACCENT }}>
-          ◆ SHAPE SHOP
+          ◆ SHOP
         </h1>
 
         {/* Model or photo, with prev/next arrows */}

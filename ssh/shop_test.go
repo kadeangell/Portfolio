@@ -13,12 +13,17 @@ import (
 )
 
 func testShop(t *testing.T) *shopModel {
-	ps, err := loadProducts()
+	// The fixture mirrors the live catalog, which includes the circle test
+	// product (model + photo) so the photo views keep test coverage.
+	ps, err := parseProducts([]byte(`[
+	  {"id":"question","name":"Question Mark","tagline":"$ unknown","description":"Coming soon."},
+	  {"id":"circle","name":"Circle","tagline":"Test product","description":"This is a test product.","images":["circle.png"]}
+	]`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ps) != 3 || ps[1].model.faceCount != 440 {
-		t.Fatalf("unexpected products: %d, circle faces %d", len(ps), ps[1].model.faceCount)
+	if live, err := loadProducts(); err != nil || len(live) != 2 || live[0].ID != "question" || live[1].ID != "circle" {
+		t.Fatalf("live catalog: %v %v", live, err)
 	}
 	return newShopModel(ps, 100, 34, true)
 }
@@ -29,7 +34,7 @@ func TestShopRendersAndNavigates(t *testing.T) {
 	m := testShop(t)
 	m.started = time.Now().Add(-10 * time.Second) // finish typing
 	s := screen(m)
-	for _, want := range []string{"SHAPE SHOP", "Triangle", "The simplest solid", "4 vertices · 4 faces", "[ see details ]", "[ exit ]", "● ○ ○", "◀", "▶"} {
+	for _, want := range []string{"◆ SHOP", "Question Mark", "$ unknown", "Coming soon.", "[ see details ]", "[ exit ]", "● ○", "◀", "▶"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("screen missing %q:\n%s", want, s)
 		}
@@ -43,7 +48,7 @@ func TestShopRendersAndNavigates(t *testing.T) {
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
-	if m.sel != 2 {
+	if m.sel != 1 {
 		t.Errorf("left wraps: sel=%d", m.sel)
 	}
 	t.Log("\n" + screen(m))
@@ -73,7 +78,7 @@ func TestPurchaseFlow(t *testing.T) {
 		t.Fatalf("1st enter should open details:\n%s", screen(m))
 	}
 	key(m, enter)
-	if m.mode != modeConfirm || !strings.Contains(screen(m), "Purchase the Triangle?") {
+	if m.mode != modeConfirm || !strings.Contains(screen(m), "Purchase the Question Mark?") {
 		t.Fatalf("2nd enter should confirm:\n%s", screen(m))
 	}
 	key(m, enter)
@@ -118,11 +123,11 @@ func TestDetailViews(t *testing.T) {
 	if m.viewIdx != 2 {
 		t.Errorf("left wraps to the photo, viewIdx=%d", m.viewIdx)
 	}
-	// Triangle has no photo: only two views
+	// Question mark has no photo: only two views
 	m2 := testShop(t)
 	key(m2, enter)
 	if n := len(m2.products[m2.sel].views()); n != 2 {
-		t.Errorf("triangle views = %d, want 2", n)
+		t.Errorf("question views = %d, want 2", n)
 	}
 }
 

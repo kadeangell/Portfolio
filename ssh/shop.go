@@ -405,7 +405,7 @@ func (m *shopModel) View() tea.View {
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
-	v.WindowTitle = "shape shop"
+	v.WindowTitle = "shop"
 	return v
 }
 
@@ -433,7 +433,7 @@ func (m *shopModel) browseLines() []string {
 	rows, cols := m.geom()
 
 	var out []string
-	title, _ := center(accentFg+boldOn+"◆ SHAPE SHOP"+styleReset, m.w)
+	title, _ := center(accentFg+boldOn+"◆ SHOP"+styleReset, m.w)
 	out = append(out, title, "")
 	out = m.stage(out, renderModel(p.model, cols, rows, m.yaw, m.pitch).lines(), cols)
 
@@ -522,7 +522,7 @@ func (m *shopModel) detailLines() []string {
 	rows, cols := m.geom()
 
 	var out []string
-	title, _ := center(accentFg+boldOn+"◆ SHAPE SHOP"+styleReset, m.w)
+	title, _ := center(accentFg+boldOn+"◆ SHOP"+styleReset, m.w)
 	name, _ := center(accentFg+boldOn+p.Name+styleReset+"  "+greyFg+p.Tagline+styleReset, m.w)
 	out = append(out, title, "", name, "")
 

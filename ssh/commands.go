@@ -39,7 +39,7 @@ func init() {
 				"  github   Show GitHub profile\n" +
 				"  linkedin Show LinkedIn profile\n" +
 				"  legacy   Show legacy portfolio\n" +
-				"  shop     Browse the shape shop\n" +
+				"  shop     Browse the shop\n" +
 				"  rainbow  Test color output\n" +
 				"  exit     Close the connection\n")
 		},

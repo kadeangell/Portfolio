@@ -1,10 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kadeangell-com",
+  "main": "worker/index.ts",
   "compatibility_date": "2025-09-02",
-  // The site is fully prerendered by `pnpm run build`, so for now the Worker is
-  // just static assets. Add `main` + a D1 binding here when the shop needs a backend.
+  // The site is fully prerendered by `pnpm run build`; the Worker only handles
+  // /api/* (virtual filesystem in R2) and everything else is static assets.
   "assets": {
-    "directory": "./dist/client"
-  }
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "r2_buckets": [{ "binding": "VFS", "bucket_name": "kadeangell-vfs" }]
 }

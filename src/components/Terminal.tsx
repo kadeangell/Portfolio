@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { ShellAdapter } from '~/terminal/shell'
+import { fsReady } from '~/terminal/fs'
 import { installWindowAPI } from '~/terminal/api'
 import { printMotd } from '~/terminal/bashrc'
 import { getProcess, registerProcess, VimWasmProcess } from '~/terminal/process'
@@ -248,7 +249,7 @@ export function Terminal({ cwd, setCwd }: TerminalProps) {
     async function setup() {
       const ghosttyModule = await import('ghostty-web')
       const { init, Terminal: GhosttyTerminal } = ghosttyModule
-      await init()
+      await Promise.all([init(), fsReady])
 
       if (disposed) return
 

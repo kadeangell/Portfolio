@@ -1,7 +1,11 @@
 import { root } from './tree'
 import type { FsNode } from './types'
 
-const VFS_PREFIX = 'vfs:'
+// Files live in R2 behind /api/fs/<user>. Everyone is the guest user until
+// there is auth. Reads are served from the in-memory tree (loaded once at boot);
+// writes go through to the bucket.
+export const CURRENT_USER = 'guest@kadeangell.com'
+const API = `/api/fs/${encodeURIComponent(CURRENT_USER)}`
 
 export function resolvePath(cwd: string, path: string): string {
   if (path === '~' || path === '') return '/'
@@ -55,7 +59,7 @@ export function isDirectory(absolutePath: string): boolean {
 }
 
 /**
- * Write a file to the virtual FS and persist to localStorage.
+ * Write a file to the virtual FS and persist it to the user's R2 bucket.
  * Creates intermediate directories as needed.
  */
 export function writeFile(absolutePath: string, content: string): boolean {
@@ -85,17 +89,17 @@ export function writeFile(absolutePath: string, content: string): boolean {
 
   current.children[fileName] = { kind: 'file', name: fileName, content }
 
-  // Persist to localStorage
-  try {
-    localStorage.setItem(VFS_PREFIX + absolutePath, content)
-  } catch {
-    // localStorage full or unavailable
-  }
+  // Persist (fire and forget; the in-memory tree stays the source of truth
+  // for this session if the API is unreachable, e.g. on the dev server)
+  void fetch(`${API}${absolutePath.split('/').map(encodeURIComponent).join('/')}`, {
+    method: 'PUT',
+    body: content,
+  }).catch(() => {})
 
   return true
 }
 
-/** Apply a file to the in-memory tree without persisting to localStorage. */
+/** Apply a file to the in-memory tree without persisting. */
 function applyToTree(absolutePath: string, content: string): void {
   const parts = absolutePath.split('/').filter(Boolean)
   const fileName = parts.pop()
@@ -118,21 +122,18 @@ function applyToTree(absolutePath: string, content: string): void {
   current.children[fileName] = { kind: 'file', name: fileName, content }
 }
 
-/** Restore localStorage-persisted files into the in-memory tree on boot. */
-function restoreFromStorage(): void {
+/** Load the user's files from R2 into the in-memory tree. */
+async function restoreFromBucket(): Promise<void> {
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (!key?.startsWith(VFS_PREFIX)) continue
-      const path = key.slice(VFS_PREFIX.length)
-      const content = localStorage.getItem(key)
-      if (content === null) continue
-      applyToTree(path, content)
-    }
+    const res = await fetch(API)
+    if (!res.ok) return
+    const { files } = (await res.json()) as { files: Record<string, string> }
+    for (const [path, content] of Object.entries(files)) applyToTree(path, content)
   } catch {
-    // localStorage unavailable (SSR, private browsing, etc.)
+    // API unreachable (dev server, offline): run with the default tree
   }
 }
 
-// Restore persisted files when this module first loads
-restoreFromStorage()
+/** Resolves once the user's files have been loaded. Await before the first prompt. */
+export const fsReady: Promise<void> =
+  typeof window === 'undefined' ? Promise.resolve() : restoreFromBucket()

@@ -10,5 +10,7 @@
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
   },
+  // www is served by this Worker; the apex 301s to it (Cloudflare redirect rule).
+  "routes": [{ "pattern": "www.kadeangell.com", "custom_domain": true }],
   "r2_buckets": [{ "binding": "VFS", "bucket_name": "kadeangell-vfs" }]
 }

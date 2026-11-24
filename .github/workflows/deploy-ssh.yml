@@ -1,0 +1,44 @@
+name: Deploy SSH service to Fly.io
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ssh/**'
+      - '.github/workflows/deploy-ssh.yml'
+  workflow_dispatch:
+
+# One deploy at a time; a newer push waits for the running one instead of racing it.
+concurrency:
+  group: deploy-ssh
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ssh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ssh/go.mod
+          cache-dependency-path: ssh/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+      # Builds the image on Fly's remote builder (the runner needs no Docker),
+      # then replaces the Machine once its health check passes. fly.toml and the
+      # Dockerfile live in ssh/.
+      - run: flyctl deploy --remote-only --ha=false --yes
+        working-directory: ssh
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

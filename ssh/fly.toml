@@ -1,0 +1,33 @@
+app = 'kadeangell-ssh'
+primary_region = 'sjc'
+
+[build]
+
+# Raw TCP: public port 22 -> the Go server on 2222
+[[services]]
+  protocol = 'tcp'
+  internal_port = 2222
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 22
+
+  [services.concurrency]
+    type = 'connections'
+    soft_limit = 20
+    hard_limit = 25
+
+  [[services.tcp_checks]]
+    interval = '15s'
+    timeout = '3s'
+    grace_period = '10s'
+
+[mounts]
+  source = 'ssh_data'
+  destination = '/data'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

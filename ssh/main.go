@@ -6,6 +6,7 @@ import (
 	"flag"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -51,9 +52,16 @@ func main() {
 	addr := flag.String("addr", ":2222", "listen address")
 	hostKey := flag.String("host-key", "host_key_ed25519", "host key path (created if missing)")
 	api := flag.String("api", "https://www.kadeangell.com", "site origin whose /api/fs stores files ('' = in-memory only)")
+	maxSessions := flag.Int("max-sessions", 20, "maximum concurrent sessions")
+	httpAddr := flag.String("http-addr", "", "if set, serve a 301 redirect to www.kadeangell.com on this address")
 	vimFlag := flag.String("vim", "", "path to the vim binary (default: first vim on PATH)")
 	flag.Parse()
 	findTools(*vimFlag)
+
+	sem := make(chan struct{}, *maxSessions)
+	if *httpAddr != "" {
+		go serveRedirect(*httpAddr)
+	}
 
 	srv, err := wish.NewServer(
 		wish.WithAddress(*addr),
@@ -65,7 +73,16 @@ func main() {
 		wish.WithIdleTimeout(10*time.Minute),
 		wish.WithMaxTimeout(2*time.Hour),
 		wish.WithMiddleware(func(next ssh.Handler) ssh.Handler {
-			return func(sess ssh.Session) { handle(sess, *api) }
+			return func(sess ssh.Session) {
+				select {
+				case sem <- struct{}{}:
+					defer func() { <-sem }()
+					handle(sess, *api)
+				default:
+					sess.Write([]byte("Too many people are connected right now. Try again in a minute.\r\n"))
+					sess.Close()
+				}
+			}
 		}),
 	)
 	if err != nil {
@@ -151,4 +168,15 @@ func handle(sess ssh.Session, api string) {
 		}
 	}()
 	newShell(sess, in, rz, pty.Term, sess.Environ(), fs).Run()
+}
+
+// serveRedirect answers every HTTP request with a permanent redirect to the
+// website, keeping the path and query. Used when the apex domain points here.
+func serveRedirect(addr string) {
+	err := http.ListenAndServe(addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://www.kadeangell.com"+r.URL.RequestURI(), http.StatusMovedPermanently)
+	}))
+	if err != nil {
+		log.Printf("redirect server: %v", err)
+	}
 }

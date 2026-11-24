@@ -1,0 +1,7 @@
+set nocompatible
+set nomodeline modelines=0
+set noswapfile nobackup nowritebackup viminfo= noundofile
+set secure
+set mouse=a
+set encoding=utf-8
+syntax on

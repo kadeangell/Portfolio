@@ -1,0 +1,12 @@
+{
+  "about.txt": "Hello! I'm Kade Angell.\nWelcome to my portfolio.\n",
+  "resume.txt": "Resume placeholder — content coming soon.\n",
+  "projects": {
+    "portfolio.txt": "portfolio — this terminal-based portfolio site.\nBuilt with React, TypeScript, and ghostty-web.\n",
+    "zaymo.txt": "zaymo — placeholder project description.\n"
+  },
+  "links": {
+    "github.txt": "https://github.com/kadeangell\n",
+    "linkedin.txt": "https://linkedin.com/in/kadeangell\n"
+  }
+}

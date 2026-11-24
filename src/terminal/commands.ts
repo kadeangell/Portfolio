@@ -57,27 +57,63 @@ commands.set('pwd', (_args, writer, ctx) => {
 })
 
 commands.set('ls', (args, writer, ctx) => {
-  const target = args[0] ? resolvePath(ctx.cwd, args[0]) : ctx.cwd
-  const entries = listDir(target)
-  if (!entries) {
-    writer.write(`\r\nls: ${args[0] || target}: No such directory`)
+  // Flags: -a (include . and ..), -l (one per line, with sizes), -1 (one per line)
+  let all = false
+  let long = false
+  let one = false
+  const paths: string[] = []
+  for (const arg of args) {
+    if (arg.length > 1 && arg.startsWith('-') && !arg.startsWith('--')) {
+      for (const f of arg.slice(1)) {
+        if (f === 'a' || f === 'A') all = true
+        else if (f === 'l') long = true
+        else if (f === '1') one = true
+        else {
+          writer.write(`\r\nls: invalid option -- '${f}'`)
+          return
+        }
+      }
+    } else {
+      paths.push(arg)
+    }
+  }
+
+  const label = paths[0]
+  const target = label ? resolvePath(ctx.cwd, label) : ctx.cwd
+  const node = getNode(target)
+  if (!node) {
+    writer.write(`\r\nls: ${label || target}: No such directory`)
+    return
+  }
+  if (node.kind === 'file') {
+    // like ls on a file: just print its name
+    writer.write('\r\n' + (label ?? node.name))
     return
   }
 
-  const node = getNode(target)
-  if (!node || node.kind !== 'dir') return
-
-  const parts: string[] = []
-  for (const name of entries) {
-    const child = node.children[name]
-    if (child.kind === 'dir') {
-      // Bold blue for directories, with trailing /
-      parts.push(`\x1b[1;34m${name}/\x1b[0m`)
-    } else {
-      parts.push(name)
-    }
+  const dirLabel = (name: string) => `\x1b[1;34m${name}/\x1b[0m`
+  const rows: { text: string; size: number; dir: boolean }[] = []
+  if (all) {
+    rows.push({ text: dirLabel('.'), size: 0, dir: true }, { text: dirLabel('..'), size: 0, dir: true })
   }
-  writer.write('\r\n' + parts.join('  '))
+  for (const name of Object.keys(node.children)) {
+    const child = node.children[name]
+    rows.push(
+      child.kind === 'dir'
+        ? { text: dirLabel(name), size: 0, dir: true }
+        : { text: name, size: new TextEncoder().encode(child.content).length, dir: false },
+    )
+  }
+
+  if (long) {
+    for (const r of rows) {
+      writer.write(`\r\n${r.dir ? 'drwxr-xr-x' : '-rw-r--r--'} ${String(r.size).padStart(6)} ${r.text}`)
+    }
+  } else if (one) {
+    for (const r of rows) writer.write('\r\n' + r.text)
+  } else {
+    writer.write('\r\n' + rows.map((r) => r.text).join('  '))
+  }
 })
 
 commands.set('cd', (args, _writer, ctx) => {
